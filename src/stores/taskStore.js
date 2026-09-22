@@ -177,9 +177,8 @@ export const taskStore = {
         const [removed] = tasks[st].splice(idx, 1)
         hiddenTasks.delete(id)
         if (!_save(st)) {
-          // 写入失败 → 回滚：插回原位，清除隐藏标记
+          // 写入失败 → 回滚：插回原位（_save 已发出警告）
           tasks[st].splice(idx, 0, removed)
-          window.dispatchEvent(new CustomEvent('storage:quota-exceeded', { detail: '存储空间不足，任务恢复显示' }))
         }
         return
       }
