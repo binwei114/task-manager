@@ -21,9 +21,14 @@ const priorityConfig = {
 
 function onPointerDown(e) {
   if (!drag || !cardEl.value) return
-  // 忽略触屏菜单操作
   if (e.target.closest('.card-menu-btn, .touch-menu, .touch-menu-item, .touch-menu *')) return
   drag.pointerDown(e, cardEl.value)
+}
+
+function onClick(e) {
+  // 拖拽结束后阻止 click 误触编辑弹窗
+  if (drag?.dragJustEnded) return
+  emit('click')
 }
 
 function handleDelete() {
@@ -42,7 +47,7 @@ function moveToStatus(status) {
     ref="cardEl"
     :data-task-id="task.id"
     @pointerdown="onPointerDown"
-    @click="$emit('click')"
+    @click="onClick"
     class="group flex items-start gap-3 bg-white dark:bg-gray-800 rounded-xl p-4 border border-gray-100 dark:border-gray-700/50 shadow-sm hover:shadow-md hover:-translate-y-0.5 cursor-default transition-all duration-150 select-none"
   >
     <!-- 优先级色标（文字标签） -->

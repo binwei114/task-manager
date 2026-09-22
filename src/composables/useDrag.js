@@ -1,37 +1,36 @@
 /**
  * useDrag.js — Pointer Events 拖拽控制器（单例状态）
  *
- * 职责：
- *   1. 管理拖拽全过程（pointerdown → pointermove → pointerup / Esc）
- *   2. 创建并移动跟随指针的浮层卡片
- *   3. 通过 reactive 状态通知 Column 高亮目标列
- *   4. 计算插入位置，在有效放下后调用 store
+ * 设计要点：
+ *   - pointerdown 绑定在 TaskCard，开始记录初始位置
+ *   - 移动超 5px 阈值后，事件绑定升级到 document 级别
+ *     （不设 setPointerCapture，避免事件被重定向丢失）
+ *   - 浮层卡片 pointer-events: none，不阻挡命中测试
+ *   - document.elementsFromPoint() 检测目标列和插入位置
+ *   - 拖拽结束后设 dragJustEnded 标记，在下一个 tick 阻止 click
  */
 
 import { reactive, readonly } from 'vue'
 import { taskStore } from '../stores/taskStore.js'
 
-/* ── 拖拽状态（响应式，Column 通过注入读取） ─────── */
+/* ── 响应式状态（Column 通过注入读取） ─────────────── */
 const state = reactive({
   isDragging: false,
   sourceId: null,
   sourceStatus: null,
-  /** 目标列 status（供 Column 高亮） */
-  targetStatus: null,
-  /** 拖拽结束信号（Column watch 到后恢复高亮状态） */
-  ended: 0,
+  targetStatus: null,  // 供 Column 高亮
+  ended: 0,            // 递增信号，Column watch 后清除高亮
 })
 
-/* ── 非响应式私有状态 ─────────────────────────────── */
-let sourceEl = null          // 源卡片 DOM 元素
-let sourceIndex = -1         // 源卡片在源列中的索引
-let startX = 0               // pointerdown 时的 clientX
-let startY = 0               // pointerdown 时的 clientY
-let hasMoved = false         // 是否超过 5px 阈值
-let floatingEl = null        // 浮层 DOM 元素
-let pointerId = null         // pointer capture ID
+/* ── 私有状态 ──────────────────────────────────────── */
+let sourceEl = null
+let startX = 0
+let startY = 0
+let hasMoved = false
+let floatingEl = null
+let dragJustEnded = false  // 阻止拖拽后的 click
 
-/* ── 浮层创建 ─────────────────────────────────────── */
+/* ── 浮层 ──────────────────────────────────────────── */
 function createFloating(cardEl, x, y) {
   const clone = cardEl.cloneNode(true)
   clone.className = 'drag-floating-card'
@@ -53,22 +52,17 @@ function moveFloating(x, y) {
 }
 
 function removeFloating() {
-  if (floatingEl) {
-    floatingEl.remove()
-    floatingEl = null
-  }
+  floatingEl?.remove()
+  floatingEl = null
 }
 
-/* ── 插入位置计算 ─────────────────────────────────── */
-function calcInsertPos(x, y) {
-  // 用 elementsFromPoint 找 .task-list 容器
+/* ── 命中测试 ──────────────────────────────────────── */
+function findDropTarget(x, y) {
   const els = document.elementsFromPoint(x, y)
   let listEl = null
   for (const el of els) {
-    if (el.matches('.task-list') || el.closest('.task-list')) {
-      listEl = el.closest('.task-list') || el
-      break
-    }
+    const list = el.matches('.task-list') ? el : el.closest('.task-list')
+    if (list) { listEl = list; break }
   }
   if (!listEl) return { status: null, insertIdx: -1 }
 
@@ -79,20 +73,16 @@ function calcInsertPos(x, y) {
   if (cards.length === 0) return { status, insertIdx: 0 }
 
   let insertIdx = cards.length
-  const listRect = listEl.getBoundingClientRect()
   for (let i = 0; i < cards.length; i++) {
     const rect = cards[i].getBoundingClientRect()
-    if (y < rect.top + rect.height / 2) {
-      insertIdx = i
-      break
-    }
+    if (y < rect.top + rect.height / 2) { insertIdx = i; break }
   }
   return { status, insertIdx }
 }
 
-/* ── 提交放置 ─────────────────────────────────────── */
+/* ── 提交 ──────────────────────────────────────────── */
 function commitDrop(x, y) {
-  const { status: targetStatus, insertIdx } = calcInsertPos(x, y)
+  const { status: targetStatus, insertIdx } = findDropTarget(x, y)
   if (!targetStatus || !state.sourceId || !state.sourceStatus) return
 
   const id = state.sourceId
@@ -103,148 +93,108 @@ function commitDrop(x, y) {
       .sort((a, b) => a.order - b.order || (b.createdAt > a.createdAt ? 1 : -1))
       .map(t => t.id)
     const withoutCurrent = allIds.filter(i => i !== id)
-
-    // 如果放到原位置 → 不提交
-    const origPos = withoutCurrent.length > 0 ? allIds.indexOf(id) : 0
+    const origPos = allIds.indexOf(id)
     let actualIdx = insertIdx
-    // adjust for the fact that withoutCurrent doesn't have the card
     if (actualIdx > origPos) actualIdx--
     if (actualIdx === origPos || actualIdx < 0) return
-
-    const spliceIdx = Math.min(actualIdx, withoutCurrent.length)
-    withoutCurrent.splice(spliceIdx, 0, id)
+    withoutCurrent.splice(Math.min(actualIdx, withoutCurrent.length), 0, id)
     taskStore.reorderColumn(targetStatus, withoutCurrent)
   } else {
-    // 跨列移动
     taskStore.updateStatus(id, targetStatus)
   }
 }
 
-/* ── 结束拖拽（所有退出路径） ─────────────────────── */
-function endDrag(commit = false, x = 0, y = 0) {
-  if (!state.isDragging) return
-
-  // 1) 解除 pointer capture，移除 window 监听
-  if (sourceEl && pointerId !== null) {
-    try { sourceEl.releasePointerCapture(pointerId) } catch {}
-  }
-  window.removeEventListener('pointermove', onPointerMove)
-  window.removeEventListener('pointerup', onPointerUp)
-  window.removeEventListener('pointercancel', onPointerCancel)
-  window.removeEventListener('keydown', onKeyDown)
-  pointerId = null
-
-  // 2) 提交或取消
-  if (commit && state.sourceId) {
-    commitDrop(x, y)
-  }
-
-  // 3) 清除浮层
-  removeFloating()
-
-  // 4) 恢复源卡片
-  if (sourceEl) {
-    sourceEl.classList.remove('drag-source-hidden')
-    sourceEl = null
-  }
-
-  // 5) 重置状态
-  state.isDragging = false
-  state.targetStatus = null
-  state.ended++
-  state.sourceId = null
-  state.sourceStatus = null
-  hasMoved = false
-  startX = 0
-  startY = 0
-}
-
-/* ── 事件处理 ─────────────────────────────────────── */
+/* ── document 级事件处理 ─────────────────────────────── */
 function onPointerMove(e) {
   const dx = e.clientX - startX
   const dy = e.clientY - startY
 
   if (!hasMoved) {
-    if (dx * dx + dy * dy < 25) return // 5px 阈值
+    if (dx * dx + dy * dy < 25) return
     hasMoved = true
-    // ★ 绑定到 window 后再隐藏源卡片 ★
     state.isDragging = true
     state.sourceId = sourceEl?.getAttribute('data-task-id') || null
     if (sourceEl) sourceEl.classList.add('drag-source-hidden')
     floatingEl = createFloating(sourceEl, e.clientX, e.clientY)
   }
 
-  // 更新浮层位置
   moveFloating(e.clientX, e.clientY)
 
-  // 检测目标列
-  const { status } = calcInsertPos(e.clientX, e.clientY)
+  const { status } = findDropTarget(e.clientX, e.clientY)
   state.targetStatus = status
 }
 
 function onPointerUp(e) {
+  cleanup()
   if (hasMoved) {
-    endDrag(true, e.clientX, e.clientY)
-  } else {
-    // 未超过阈值 → 普通点击，让 click 事件处理
-    endDrag(false)
+    dragJustEnded = true
+    // 下一个 tick 清除标记，让可能的 click 被阻止
+    setTimeout(() => { dragJustEnded = false }, 0)
+    commitDrop(e.clientX, e.clientY)
   }
+  // hasMoved === false → 普通点击，不做任何事，让 click 事件正常触发
 }
 
 function onPointerCancel() {
-  endDrag(false) // 取消
+  cleanup()
 }
 
 function onKeyDown(e) {
   if (e.key === 'Escape') {
-    endDrag(false)
+    cleanup()
   }
 }
 
-/* ── 公开 API ─────────────────────────────────────── */
-let emitCardClick = null // 由 KanbanBoard 设置
+/* ── 清理（所有退出路径共享） ────────────────────────── */
+function cleanup() {
+  removeFloating()
+  sourceEl?.classList.remove('drag-source-hidden')
+  document.removeEventListener('pointermove', onPointerMove)
+  document.removeEventListener('pointerup', onPointerUp)
+  document.removeEventListener('pointercancel', onPointerCancel)
+  document.removeEventListener('keydown', onKeyDown)
 
+  state.isDragging = false
+  state.targetStatus = null
+  state.ended++
+  state.sourceId = null
+  state.sourceStatus = null
+
+  sourceEl = null
+  hasMoved = false
+  startX = 0
+  startY = 0
+}
+
+/* ── 公开 API ──────────────────────────────────────── */
 export function useDrag() {
-  /** TaskCard 调用：mouse pointerdown */
   function pointerDown(e, cardEl) {
-    // 仅响应鼠标（忽略触控笔和手指）
     if (e.pointerType !== 'mouse') return
-    // 忽略触屏菜单按钮点击
     if (e.target.closest('.card-menu-btn, .touch-menu, .touch-menu-item')) return
 
     const taskId = cardEl.getAttribute('data-task-id')
-    if (!taskId) return
-
-    const task = taskStore.getById(taskId)
+    const task = taskId ? taskStore.getById(taskId) : null
     if (!task) return
 
-    // 记录初始状态
+    // 保存初始状态
     sourceEl = cardEl
-    sourceIndex = -1
     startX = e.clientX
     startY = e.clientY
     hasMoved = false
-    pointerId = e.pointerId
     state.sourceStatus = task.status
-    state.sourceId = null // 待 hasMoved 后设置
+    state.sourceId = null
 
-    // ★ 先绑定 window 事件，再处理后续逻辑 ★
-    window.addEventListener('pointermove', onPointerMove)
-    window.addEventListener('pointerup', onPointerUp)
-    window.addEventListener('pointercancel', onPointerCancel)
-    window.addEventListener('keydown', onKeyDown)
-
-    // capture pointer 防止鼠标离开卡片后丢失事件
-    try { cardEl.setPointerCapture(e.pointerId) } catch {}
+    // ★ 绑定到 document —— 最可靠，不依赖 pointer capture ★
+    document.addEventListener('pointermove', onPointerMove)
+    document.addEventListener('pointerup', onPointerUp)
+    document.addEventListener('pointercancel', onPointerCancel)
+    document.addEventListener('keydown', onKeyDown)
   }
 
   return {
     state: readonly(state),
     pointerDown,
+    /** TaskCard 检测此标记来阻止拖拽后的 click */
+    get dragJustEnded() { return dragJustEnded },
   }
-}
-
-/** 供 KanbanBoard 设置外部点击回调 */
-export function setEmitCardClick(fn) {
-  emitCardClick = fn
 }
