@@ -7,3 +7,19 @@
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: #94a3b8; border-radius: 3px; }
 .dark ::-webkit-scrollbar-thumb { background: #475569; }
+
+/* 拖拽中源卡片 — 从 flex 布局坍缩，其他卡片补位 */
+.dragging-source {
+  opacity: 0 !important;
+  height: 0 !important;
+  min-height: 0 !important;
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+  margin-top: 0 !important;
+  margin-bottom: 0 !important;
+  border-width: 0 !important;
+  overflow: hidden !important;
+  flex: 0 0 0 !important;
+  pointer-events: none !important;
+  transform: none !important;
+}

@@ -19,6 +19,15 @@ const priorityConfig = {
 function onDragStart(e) {
   e.dataTransfer.setData('text/plain', props.task.id)
   e.dataTransfer.effectAllowed = 'move'
+  // 立即隐藏源卡片并使其从 flex 布局中坍缩，其他卡片自然补位
+  const el = e.currentTarget
+  el.classList.add('dragging-source')
+}
+
+function onDragEnd(e) {
+  // 恢复源卡片显示（无论拖拽是否成功放下）
+  const el = e.currentTarget
+  el.classList.remove('dragging-source')
 }
 
 function handleDelete() {
@@ -37,6 +46,7 @@ function moveToStatus(status) {
     :data-task-id="task.id"
     draggable="true"
     @dragstart="onDragStart"
+    @dragend="onDragEnd"
     @click="$emit('click')"
     class="group flex items-start gap-3 bg-white dark:bg-gray-800 rounded-xl p-4 border border-gray-100 dark:border-gray-700/50 shadow-sm hover:shadow-md hover:-translate-y-0.5 cursor-grab active:cursor-grabbing transition-all duration-150"
   >
