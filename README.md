@@ -8,7 +8,7 @@
 
 ## 📋 Task Manager
 
-A lightweight, browser-based kanban task management tool built with **Vue 3 + Vite + Tailwind CSS**. Tasks are stored in `localStorage` — zero backend, zero dependencies, refresh-safe.
+A lightweight, browser-based kanban task management tool built with **Vue 3 + Vite + Tailwind CSS**. Tasks are stored in `localStorage` — no backend required, refresh-safe. Icons use Unicode/emoji with zero external dependencies.
 
 ### Tech Stack
 
@@ -31,13 +31,14 @@ A lightweight, browser-based kanban task management tool built with **Vue 3 + Vi
 - **Undo delete** — 3-second undo window with a toast notification
 - **Search** — Real-time filter by title / description
 - **Dark mode** — Follows system preference; manual toggle persisted to localStorage
-- **Storage safety** — Write-ahead strategy with rollback on `QuotaExceededError`; user-facing toast warnings
+- **Storage safety** — Writes to localStorage after modifying reactive state; rolls back specific operations on `QuotaExceededError` and shows a toast warning
 - **Responsive** — Three-column layout on desktop, horizontal scroll on narrow screens with snap-scroll
 
 ### Getting Started
 
 ```bash
-cd ~/Desktop/task\ manager
+git clone git@github.com:binwei114/task-manager.git
+cd task-manager
 npm install
 npm run dev
 ```
@@ -77,8 +78,10 @@ task manager/
 │   │   ├── TaskCard.vue       # Task card (pointer-down, click, touch menu)
 │   │   ├── TaskModal.vue      # Create / Edit / Confirm dialog
 │   │   └── ToastContainer.vue # Toast notifications
+│   └── assets/
+│       └── style.css          # Tailwind directives + custom styles
 ├── doc/
-│   ├── architecture.md        # Architecture design document
+│   ├── architecture.md        # Architecture document
 │   └── requirement.md         # Requirements specification
 ├── screenshots/               # Feature screenshots
 ├── prompts/                   # Prompt design records
@@ -90,7 +93,7 @@ task manager/
 - **Single-direction data flow**: `store` is the single source of truth; components read reactively and write through store methods.
 - **Event bus eliminated**: Vue's reactive system (`reactive`, `computed`, `watch`) replaces the old custom event bus.
 - **Delete safety net**: Deleted tasks are immediately hidden from UI via a `reactive(Set)`; a 3-second timer calls `commitDelete` which splices from the array + `_save()`. If `_save()` fails, the task is re-inserted and a toast warns the user.
-- **Drag robustness**: Pointer Events bound to `document` (no `setPointerCapture`), `elementsFromPoint` for hit-testing, `drag-source-hidden` CSS class collapses the source card from the flex layout.
+- **Drag robustness**: Pointer Events bound to `window` (no `setPointerCapture`), `elementFromPoint` for hit-testing, `drag-source-hidden` CSS class (`display: none`) removes the source card from layout during drag.
 
 ---
 
@@ -98,7 +101,7 @@ task manager/
 
 ## 📋 Task Manager — 任务管理器
 
-一款轻量浏览器端看板任务管理工具，使用 **Vue 3 + Vite + Tailwind CSS** 构建。数据存储在 `localStorage` 中——无需后端、零外部依赖、刷新不丢失。
+一款轻量浏览器端看板任务管理工具，使用 **Vue 3 + Vite + Tailwind CSS** 构建。数据存储在 `localStorage` 中——无需后端或外部服务，刷新不丢失。图标使用 Unicode/emoji，无额外图标依赖。
 
 ### 技术栈
 
@@ -127,7 +130,8 @@ task manager/
 ### 快速启动
 
 ```bash
-cd ~/Desktop/task\ manager
+git clone git@github.com:binwei114/task-manager.git
+cd task-manager
 npm install
 npm run dev
 ```
@@ -167,9 +171,11 @@ task manager/
 │   │   ├── TaskCard.vue       # 任务卡片（pointerdown、点击、触屏菜单）
 │   │   ├── TaskModal.vue      # 新建/编辑/确认对话框
 │   │   └── ToastContainer.vue # Toast 通知容器
+│   └── assets/
+│       └── style.css          # Tailwind 指令 + 自定义样式
 ├── doc/
-│   ├── architecture.md        # 架构设计文档
-│   └── requirement.md         # 需求规格说明
+│   ├── architecture.md        # 架构文档
+│   └── requirement.md         # 需求文档
 ├── screenshots/               # 功能截图
 ├── prompts/                   # 提示词设计记录
 └── .gitignore
@@ -180,4 +186,4 @@ task manager/
 - **单向数据流**：Store 是唯一数据源，组件响应式读取，通过 Store 方法写入
 - **事件总线已移除**：Vue 响应式系统（`reactive`、`computed`、`watch`）取代了旧的自定义事件总线
 - **删除安全网**：删除后立即用 `reactive(Set)` 从 UI 隐藏；3 秒定时器到期后调用 `commitDelete` 从数组移除 + `_save()`。若 `_save()` 失败则插回任务，Toast 警告用户
-- **拖拽可靠性**：Pointer Events 绑定在 `document`（不使用 `setPointerCapture`），`elementsFromPoint` 命中测试，`drag-source-hidden` CSS class 使源卡片从 flex 布局坍缩
+- **拖拽可靠性**：Pointer Events 绑定在 `window`（不使用 `setPointerCapture`），`elementFromPoint` 命中测试，`drag-source-hidden` CSS class（`display: none`）使源卡片离开布局

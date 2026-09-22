@@ -1,4 +1,4 @@
-# 任务管理应用 — 架构设计草案
+# 任务管理应用 — 架构说明
 
 ## 1. 技术选型
 
@@ -9,11 +9,11 @@
 | 构建工具 | Vite | 极速 HMR、原生 ESM、开箱即用支持 Vue SFC |
 | 样式方案 | Tailwind CSS 3 | 原子化 CSS、深色模式内置支持、快速开发 |
 | 存储 | localStorage（按状态列拆分 key） | 纯前端、刷新不丢失；拆分 key 减少单次序列化量 |
-| 拖拽 | Pointer Events（自研）| 基于 `pointerdown/move/up`，绑定到 `document`；`elementsFromPoint` 命中测试 |
+| 拖拽 | Pointer Events（自研）| 基于 `pointerdown/move/up`，绑定到 `window`；`elementFromPoint` 命中测试 |
 | 包管理 | npm | 标准生态 |
 | 开发工具 | VSCode + Vite Dev Server | 热更新开发体验 |
 
-**关于拖拽的架构决策**：采用自研 Pointer Events 方案（`useDrag.js` composable），将 `pointermove/up/cancel` 绑定到 `document`，并通过 `document.elementsFromPoint()` 进行命中测试。对触屏设备（`'ontouchstart' in window`）自动降级为在卡片上显示「移动至…」下拉菜单，确保所有设备可操作。
+**关于拖拽的架构决策**：采用自研 Pointer Events 方案（`useDrag.js` composable），将 `pointermove/up/cancel` 绑定到 `window`，并通过 `document.elementFromPoint()` 进行命中测试。对触屏设备（`'ontouchstart' in window`）自动降级为在卡片上显示「移动至…」下拉菜单，确保所有设备可操作。
 
 ## 2. 目录结构
 
@@ -47,44 +47,23 @@ task manager/
 └── .gitignore
 ```
 
-## 3. 组件树 (DOM 结构)
+## 3. 组件关系
 
 ```
-#app
-├── .app-header
-│   ├── .app-title              "Task Manager"
-│   ├── .search-box             搜索输入框 (placeholder="搜索…")
-│   ├── .theme-toggle           深色模式切换按钮
-│   └── .add-task-btn           新建任务按钮
-├── .kanban-board
-│   ├── .column[data-status="todo"]
-│   │   ├── .column-header      待办 (计数) [逾期: N]
-│   │   └── .task-list          (可拖放区)
-│   │       └── .task-card      (可拖拽)
-│   ├── .column[data-status="in-progress"]
-│   │   ├── .column-header      进行中 (计数)
-│   │   └── .task-list
-│   └── .column[data-status="done"]
-│       ├── .column-header      完成 (计数)
-│       └── .task-list
-├── #task-modal                 (隐藏弹窗 — 新增/编辑/确认复用)
-│   ├── .modal-overlay
-│   └── .modal-content
-│       ├── .form-view          (mode="create"|"edit" 时显示)
-│       │   ├── form
-│       │   │   ├── input#task-title          (必填)
-│       │   │   ├── textarea#task-description (选填)
-│       │   │   ├── input#task-dueDate        (选填，type="date")
-│       │   │   ├── select#task-priority      (高/中/低)
-│       │   │   ├── select#task-status        (三态)
-│       │   │   └── button[type="submit"]     保存
-│       │   └── .modal-close
-│       └── .confirm-view       (mode="confirm" 时显示)
-│           ├── .confirm-message             提示文本
-│           ├── .confirm-btn                 确认按钮
-│           └── .cancel-btn                  取消按钮
-└── #toast-container            临时通知容器（撤销/错误提示）
+App.vue
+├── AppHeader          — 标题、搜索框、深色切换按钮、新建按钮
+├── KanbanBoard        — Provide: drag (useDrag)
+│   └── Column (×3)   — 遍历 COLUMNS 渲染
+│       └── TaskCard   — pointerdown、click、touch menu
+├── TaskModal          — Teleport to body; v-if 控制显隐
+└── ToastContainer     — 浮动通知
 ```
+
+- 弹窗使用 `<Teleport to="body">`，`v-if="modal.show"` 控制挂载/卸载
+- 拖拽状态通过 `provide/inject` 从 `KanbanBoard` 向下传递
+- 搜索词通过 `provide/inject` 从 `App.vue` 向下传递
+
+Column 的任务放置区选择器：`.task-list[data-status]`，拖拽命中检测依赖此结构。
 
 ## 4. 数据模型
 
@@ -97,7 +76,7 @@ task manager/
   status: "todo" | "in-progress" | "done",
   priority: "high" | "medium" | "low",
   order: 0,                             // 同列排序权重（数值越小越靠前）
-  dueDate: "ISO-8601" | null,           // 截止日期（选填）
+  dueDate: "YYYY-MM-DD" | null,         // 截止日期（选填，来自 date input）
   tags: [],                             // 预留标签字段
   createdAt: "ISO-8601",                // 创建时间戳
   updatedAt: "ISO-8601"                 // 最后修改时间戳
@@ -131,24 +110,24 @@ Store  (`taskStore`) 使用 `reactive()` 管理三个状态数组 (`todo` / `in-
 
 深色切换 → useTheme composable
            ├── 读取 window.matchMedia('(prefers-color-scheme: dark)')
-           ├── 用户手动切换 → 写入 localStorage + 标记 userOverridden
-           ├── 系统主题变化 → 仅当 !userOverridden 时自动跟随
-           └── 更新 <html> 的 class 包含 .dark
+           ├── 用户手动切换 → 写入 localStorage（只存 'light' 或 'dark'）
+           ├── 系统主题变化 → 仅当 localStorage 无保存值时自动跟随
+           └── 切换 <html> 的 .dark 类
 ```
 
 ## 6. 拖拽交互流程
 
 ### 6.1 桌面拖拽（Pointer Events）
 
-基于 `useDrag.js` composable，采用 Pointer Events 实现：
+基于 `useDrag.js` composable，监听器绑定在 `window`：
 
-1. `pointerdown` 在 TaskCard 触发 → 记录初始位置、源卡片 DOM、源状态；将 `pointermove` / `pointerup` / `pointercancel` 绑定到 `document`
+1. `pointerdown` 在 TaskCard 触发 → 记录初始位置、源卡片 DOM、源状态；将 `pointermove`/`pointerup`/`pointercancel`、`keydown` 及 `blur` 绑定到 `window`
 2. 鼠标移动超过 5px 后进入拖拽模式：
-   - 源卡片添加 `drag-source-hidden` class → 从 flex 布局坍缩，其他卡片补位
-   - 创建浮层卡片 (`drag-floating-card`) 克隆，`pointer-events: none`，跟随鼠标
-   - `document.elementsFromPoint()` 检测目标列，更新 `state.targetStatus` → Column 高亮
-3. `pointerup` 时计算插入位置，调用 `taskStore.updateStatus()`（跨列）或 `taskStore.reorderColumn()`（同列排序）
-4. `pointercancel` 或 `Escape` → 清理浮层、恢复源卡片，不提交数据
+   - 源卡片添加 `drag-source-hidden`（`display: none !important;`）→ 完全离开布局，其他卡片补位
+   - 创建浮层卡片 (`drag-floating-card`) 克隆（`position: fixed`，`opacity: 0.92`，`rotate(3deg) scale(1.04)`，`pointer-events: none`）跟随鼠标
+   - `document.elementFromPoint()` 检测目标列，更新 `state.targetStatus` → Column 高亮
+3. `pointerup` 时计算插入位置，调用 `taskStore.updateStatus()`（跨列）或 `taskStore.reorderColumn()`（同列排序）；通过 `setTimeout(0)` 阻止可能的 `click` 事件
+4. `pointercancel`、`Escape` 或 `blur` → 清理浮层、恢复源卡片，不提交数据
 
 ### 6.2 触屏降级
 
@@ -159,20 +138,20 @@ Store  (`taskStore`) 使用 `reactive()` 管理三个状态数组 (`todo` / `in-
 
 ## 7. 深色模式
 
-- CSS 自定义属性 (`--bg-primary`, `--text-primary` 等) 定义在 `:root` 和 `[data-theme="dark"]`
-- **启动时**：先检查 `localStorage` 中的用户偏好；若无，则读取 `window.matchMedia('(prefers-color-scheme: dark)')` 跟随系统
-- **切换时**：更新 `data-theme` 属性 + localStorage 存储 + 标记 `userOverridden = true`
-- **系统变化时**：监听 `matchMedia('(prefers-color-scheme: dark)').addEventListener('change', ...)`，仅当用户未手动覆盖时自动跟随
-- 存储 key：`taskmanager_theme`（值：`'light'` | `'dark'` | `'system'`）
+- CSS 通过 Tailwind `dark:` 变体控制，切换时在 `<html>` 上添加/移除 `.dark` 类
+- **启动时**：先检查 localStorage 中的用户偏好；无保存值时读取 `window.matchMedia('(prefers-color-scheme: dark)')` 跟随系统
+- **手动切换**：更新 `.dark` 类 + 写入 localStorage（仅保存 `'light'` 或 `'dark'`）
+- **系统变化**：监听 `matchMedia` 的 `change` 事件，仅当 localStorage 无保存值时自动跟随
+- 主题存储无异常处理
 
-## 8. 弹窗复用
+## 8. 弹窗
 
-- 新增 / 编辑 / **确认对话框**共用同一个模态框
-- 三种模式通过 `data-mode` 区分：`"create"` / `"edit"` / `"confirm"`
-- `create`：表单字段置空，提交 → `store.createTask()`
-- `edit`：预填数据，隐藏字段 `data-task-id`，提交 → `store.updateTask()`
-- `confirm`：只显示消息文本 + 确认/取消按钮，不渲染表单字段
-- 关闭方式：点击遮罩 / 关闭按钮 / ESC 键
+- 新增 / 编辑 / 确认共用同一个 `TaskModal.vue` 组件
+- 通过 `mode` prop 区分三种模式：`"create"` / `"edit"` / `"confirm"`
+- `create`：表单字段为空，提交 → `App.vue` 调用 `taskStore.create()`
+- `edit`：从 `taskStore` 读取当前任务数据预填，提交 → `App.vue` 调用 `taskStore.update()`
+- `confirm`：只显示消息文本 + 取消/确认按钮
+- 关闭方式：点击遮罩、关闭按钮均可关闭
 
 ## 9. 搜索与筛选
 
@@ -182,12 +161,18 @@ Store  (`taskStore`) 使用 `reactive()` 管理三个状态数组 (`todo` / `in-
 - 清空搜索框恢复完整看板
 - 搜索状态不影响数据（纯前端过滤）
 
-## 10. 存储安全与异常处理
+## 10. 存储与异常处理
 
-- **容量预警**：每次 `setItem` 前用探针检查 `QuotaExceededError`
-- **异常捕获**：所有 `localStorage` 操作包裹 try-catch，捕获到错误时：① `window.dispatchEvent(new CustomEvent('storage:quota-exceeded', …))` 通知 Toast ② 界面显示 toast 提示
-- **向前兼容**：`store.init()` 时检测旧数据格式（单 key），自动迁移到三 key 新格式
-- **数据校验**：`store.init()` 对每条任务做 schema 校验，修补缺失字段默认值
+### 10.1 任务数据
+
+- **读取**（`_load`）：`localStorage.getItem()` 包装在 try-catch 中，解析失败返回 `[]`
+- **写入**（`_save`）：`localStorage.setItem()` 包装在 try-catch 中。捕获 `QuotaExceededError` 时：① `console.warn` ② `window.dispatchEvent(new CustomEvent('storage:quota-exceeded'))` → Toast 警告
+- **创建**（`create`）：先 `push` 到响应式数组，再 `_save()`，写入失败则 `pop()` 回滚
+- **更新**（`update`）：先修改并备份旧值，再 `_save()`，写入失败则恢复备份
+- **排序**（`reorderColumn`）：先深拷贝备份，再 `_save()`，写入失败则恢复备份
+- **删除提交**（`commitDelete`）：先 `splice` 移除，再 `_save()`，写入失败则 `splice` 插回
+- **旧格式迁移**（`_migrateOld`）：整个迁移过程在 try-catch 中，失败时静默忽略
+- **字段规范化**（`_validate`）：对读取的每条任务补全缺失字段的默认值，不抛出异常
 
 ### 10.1 撤销删除机制
 
@@ -212,11 +197,11 @@ const COLUMNS = [
 ]
 ```
 
-`board.js` 的渲染循环遍历 `COLUMNS` 自动生成列。后续如需加列（如「审核中」），只需追加数组项。
+三列定义在 `taskStore.js` 的 `COLUMNS` 常量中，看板由 Vue 组件遍历 `COLUMNS` 渲染。Store 的存储 key 与状态一一对应。添加新列需要修改 `COLUMNS` 和 `STORE_KEYS` 两处。
 
-## 12. 渲染性能优化
+## 12. 渲染机制
 
-- 使用 `DocumentFragment` 批量构建 DOM 后再一次性插入
-- 列计数更新从 DOM 重渲染中分离，使用 `textContent` 直接更新
-- 合并短期内多次渲染请求（`requestAnimationFrame` 批处理）
-- 搜索过滤时只做 CSS 显隐切换（`display: none`），不销毁/重建 DOM
+- 列内任务通过 `computed` 链处理：`tasks` → `filtered`（搜索 + 隐藏过滤）→ `sorted`（按 `order` + `createdAt`）
+- Vue 的响应式系统自动追踪 `reactive` 数组的变化，仅更新受影响的 DOM
+- 拖拽时的列高亮通过 `computed`（`drag.state.targetStatus === props.status`）实现
+- 搜索过滤仅影响 `computed` 返回值，不创建/销毁 DOM 节点
