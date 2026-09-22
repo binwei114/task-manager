@@ -10,7 +10,9 @@ const tasks = computed(() => taskStore.getByStatus(props.status))
 
 const filtered = computed(() => {
   const q = (props.searchWord || '').toLowerCase().trim()
-  return q ? tasks.value.filter(t => t.title.toLowerCase().includes(q) || t.description.toLowerCase().includes(q)) : tasks.value
+  const visible = q ? tasks.value.filter(t => t.title.toLowerCase().includes(q) || t.description.toLowerCase().includes(q)) : tasks.value
+  // 排除待删除（隐藏）任务
+  return visible.filter(t => !taskStore.isHidden(t.id))
 })
 
 const sorted = computed(() =>

@@ -1,4 +1,4 @@
-import { reactive, computed } from 'vue'
+import { reactive } from 'vue'
 
 /* ── 常量 ──────────────────────────────────────── */
 const STORE_KEYS = {
@@ -16,7 +16,10 @@ export const COLUMNS = [
 
 /* ── 响应式 Store ──────────────────────────────── */
 const tasks = reactive({ todo: [], 'in-progress': [], done: [] })
-const pendingDeletes = {}
+/* 待删除任务 ID 集合 — 加入隐藏集后看板和计数自动排除 */
+const hiddenTasks = reactive(new Set())
+/* { id: timer } */
+const pendingTimers = {}
 
 function _load(status) {
   try { return JSON.parse(localStorage.getItem(STORE_KEYS[status]) || '[]') }
@@ -28,7 +31,7 @@ function _save(status) {
     return true
   } catch (e) {
     if (e.name === 'QuotaExceededError') {
-      console.warn('存储空间不足，部分数据可能没有保存')
+      console.warn('存储空间不足，数据可能没有保存')
       window.dispatchEvent(new CustomEvent('storage:quota-exceeded', { detail: '存储空间不足，数据未保存' }))
     } else {
       console.error('存储写入失败', e)
@@ -87,9 +90,7 @@ export const taskStore = {
       createdAt: now,
       updatedAt: now,
     })
-    // 先操作内存
     tasks[task.status].push(task)
-    // 再持久化，写入失败则回滚
     if (!_save(task.status)) {
       tasks[task.status].pop()
       return null
@@ -103,7 +104,6 @@ export const taskStore = {
       if (idx === -1) continue
       const task = tasks[st][idx]
       const oldStatus = task.status
-      // 备份旧值以便回滚
       const backup = { ...task, status: task.status }
 
       if (changes.title !== undefined) task.title = changes.title.trim()
@@ -118,7 +118,6 @@ export const taskStore = {
         tasks[st].splice(idx, 1)
         tasks[changes.status].push(task)
         if (!_save(oldStatus) || !_save(changes.status)) {
-          // 回滚状态变更
           tasks[changes.status].pop()
           tasks[st].splice(idx, 0, { ...backup })
           Object.assign(task, backup)
@@ -127,12 +126,11 @@ export const taskStore = {
         }
       } else {
         if (!_save(st)) {
-          // 回滚原地修改
           Object.assign(task, backup)
           return null
         }
       }
-      if (pendingDeletes[id]) this.cancelDelete(id)
+      if (pendingTimers[id]) this.cancelDelete(id)
       return task
     }
     return null
@@ -142,85 +140,72 @@ export const taskStore = {
     return this.update(id, { status: newStatus })
   },
 
-  markPendingDelete(id) {
-    if (pendingDeletes[id]) return
-    // 立即从响应式状态移除 → 看板立刻消失，列计数即时更新
-    let removedTask = null
-    let removedFrom = null
-    let removedIdx = -1
-    for (const st of Object.keys(STORE_KEYS)) {
-      const idx = tasks[st].findIndex(t => t.id === id)
-      if (idx !== -1) {
-        [removedTask] = tasks[st].splice(idx, 1)
-        removedFrom = st
-        removedIdx = idx
-        break
-      }
-    }
-    if (!removedTask) return
+  // ── 删除流程 ──────────────────────────────────────
+  // 设计：
+  //   1. 待删除任务保留在原始 tasks 数组中
+  //   2. hiddenTasks (reactive Set) 控制界面显隐
+  //   3. 3 秒定时器到期调用 commitDelete
+  //   4. cancelDelete 只清除定时器和隐藏标记，不写磁盘
+  //   5. commitDelete 从数组移除 + _save，失败则插回
 
-    // 存入撤销缓存，3 秒后从 localStorage 删除
-    pendingDeletes[id] = {
-      task: removedTask,
-      fromStatus: removedFrom,
-      fromIndex: removedIdx,
-      timer: setTimeout(() => {
-        // 到期：清理 localStorage + 缓存
-        const st = pendingDeletes[id]?.fromStatus
-        if (st) {
-          const all = _load(st).filter(t => t.id !== id)
-          localStorage.setItem(STORE_KEYS[st], JSON.stringify(all))
-        }
-        delete pendingDeletes[id]
-      }, 3000),
+  markPendingDelete(id) {
+    let found = false
+    for (const st of Object.keys(STORE_KEYS)) {
+      if (tasks[st].some(t => t.id === id)) { found = true; break }
     }
+    if (!found) return false
+    // 加入隐藏集 → 界面立即消失
+    hiddenTasks.add(id)
+    // 启动定时器，到期执行 commitDelete
+    pendingTimers[id] = setTimeout(() => this.commitDelete(id), 3000)
+    return true
   },
 
   cancelDelete(id) {
-    const record = pendingDeletes[id]
-    if (!record) return
-    clearTimeout(record.timer)
-    // 恢复到原位置
-    const list = tasks[record.fromStatus]
-    list.splice(record.fromIndex, 0, record.task)
-    // 重新编号保持顺序
-    list.forEach((t, i) => { t.order = i })
-    _save(record.fromStatus)
-    delete pendingDeletes[id]
+    if (!pendingTimers[id]) return
+    clearTimeout(pendingTimers[id])
+    delete pendingTimers[id]
+    hiddenTasks.delete(id)
+    // 不写 localStorage — 数组从未被改动
   },
 
-  confirmDelete(id) {
-    const record = pendingDeletes[id]
-    if (record) {
-      clearTimeout(record.timer)
-      // 从 localStorage 删除（响应式状态中已不存在）
-      const all = _load(record.fromStatus).filter(t => t.id !== id)
-      try {
-        localStorage.setItem(STORE_KEYS[record.fromStatus], JSON.stringify(all))
-      } catch (e) {
-        if (e.name === 'QuotaExceededError') {
-          window.dispatchEvent(new CustomEvent('storage:quota-exceeded', { detail: '存储空间不足，数据未保存' }))
+  commitDelete(id) {
+    delete pendingTimers[id]
+    for (const st of Object.keys(STORE_KEYS)) {
+      const idx = tasks[st].findIndex(t => t.id === id)
+      if (idx !== -1) {
+        const [removed] = tasks[st].splice(idx, 1)
+        hiddenTasks.delete(id)
+        if (!_save(st)) {
+          // 写入失败 → 回滚：插回原位，清除隐藏标记
+          tasks[st].splice(idx, 0, removed)
+          window.dispatchEvent(new CustomEvent('storage:quota-exceeded', { detail: '存储空间不足，任务恢复显示' }))
         }
+        return
       }
-      delete pendingDeletes[id]
     }
+    // 任务已被其他途径移除 → 只清理隐藏标记
+    hiddenTasks.delete(id)
   },
 
+  confirmDelete(id) { this.commitDelete(id) },
+
+  hasPendingDelete(id) { return !!pendingTimers[id] },
+  isHidden(id) { return hiddenTasks.has(id) },
+
+  // ── 排序 ──────────────────────────────────────────
   reorderColumn(status, orderedIds) {
     const map = {}
-    // 深拷贝每个任务对象，回滚时 order 值不受后续修改影响
     const backup = tasks[status].map(t => ({ ...t }))
     tasks[status].forEach(t => { map[t.id] = t })
     tasks[status] = orderedIds.map((id, i) => { map[id].order = i; return map[id] })
     if (!_save(status)) {
-      // 写入失败 → 回滚
       tasks[status] = backup
     }
   },
-
-  hasPendingDelete(id) { return !!pendingDeletes[id] },
 }
 
+/* ── 数据迁移 ──────────────────────────────────── */
 function _migrateOld() {
   try {
     const old = localStorage.getItem(OLD_KEY)
@@ -238,6 +223,7 @@ function _migrateOld() {
   } catch {}
 }
 
+/* ── 导出工具函数 ────────────────────────────────── */
 export function isOverdue(task) {
   if (!task.dueDate || task.status === 'done') return false
   const today = new Date(); today.setHours(0, 0, 0, 0)
