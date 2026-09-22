@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted, provide } from 'vue'
+import { ref, onMounted, onUnmounted, provide } from 'vue'
 import { taskStore } from './stores/taskStore.js'
 import { useTheme } from './composables/useTheme.js'
 import { useToast } from './composables/useToast.js'
@@ -39,7 +39,16 @@ function handleConfirm() {
 onMounted(() => {
   taskStore.init()
   if (taskStore.getAll().length === 0) seedTasks()
+  // 监听存储容量不足事件 → 显示 Toast
+  window.addEventListener('storage:quota-exceeded', onStorageWarning)
 })
+onUnmounted(() => {
+  window.removeEventListener('storage:quota-exceeded', onStorageWarning)
+})
+
+function onStorageWarning(e) {
+  show(e.detail || '存储空间不足', 'warning')
+}
 function seedTasks() {
   const t = new Date(); t.setDate(t.getDate() + 1)
   const f = d => d.toISOString().split('T')[0]

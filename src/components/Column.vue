@@ -45,21 +45,35 @@ function onDrop(e) {
   const task = taskStore.getById(id)
   if (!task) return
   if (task.status === props.status) {
-    // 同列排序
+    // 同列排序 — 基于完整数据列表操作，避免搜索过滤导致数据丢失
     const listEl = e.currentTarget
-    const cards = [...listEl.querySelectorAll('[data-task-id]')]
-    const ids = cards.map(el => el.dataset.taskId).filter(Boolean)
-    const withoutCurrent = ids.filter(i => i !== id)
+    const visibleCardIds = [...listEl.querySelectorAll('[data-task-id]')].map(el => el.dataset.taskId).filter(Boolean)
+    // 获取该列的完整任务 ID 列表（按当前 order 排序）
+    const fullOrdered = [...taskStore.getByStatus(props.status)].sort(
+      (a, b) => a.order - b.order || (b.createdAt > a.createdAt ? 1 : -1)
+    )
+    const allIds = fullOrdered.map(t => t.id)
+
+    // 计算可见卡片的新插入位置
     const offsetY = e.clientY - listEl.getBoundingClientRect().top
-    let insertIdx = withoutCurrent.length
-    for (let i = 0; i < cards.length; i++) {
-      const rect = cards[i].getBoundingClientRect()
+    let insertIdx = visibleCardIds.length
+    for (let i = 0; i < visibleCardIds.length; i++) {
+      const el = listEl.querySelector(`[data-task-id="${visibleCardIds[i]}"]`)
+      if (!el) continue
+      const rect = el.getBoundingClientRect()
       if (offsetY < rect.top + rect.height / 2 - listEl.getBoundingClientRect().top) {
         insertIdx = i
         break
       }
     }
-    withoutCurrent.splice(insertIdx, 0, id)
+
+    // 从完整列表中移除当前卡片，再按可见卡片新顺序重新插入
+    const withoutCurrent = allIds.filter(i => i !== id)
+    // 找到完整列表中第 insertIdx 个可见卡片在 withoutCurrent 中的位置
+    const targetVisibleId = insertIdx < visibleCardIds.length ? visibleCardIds[insertIdx] : null
+    const spliceAt = targetVisibleId ? withoutCurrent.indexOf(targetVisibleId) : withoutCurrent.length
+    withoutCurrent.splice(spliceAt, 0, id)
+
     taskStore.reorderColumn(props.status, withoutCurrent)
   } else {
     taskStore.updateStatus(id, props.status)

@@ -24,7 +24,15 @@ function _load(status) {
 }
 function _save(status) {
   try { localStorage.setItem(STORE_KEYS[status], JSON.stringify(tasks[status])) }
-  catch (e) { if (e.name === 'QuotaExceededError') console.warn('存储空间不足') }
+  catch (e) {
+    if (e.name === 'QuotaExceededError') {
+      console.warn('存储空间不足，部分数据可能没有保存')
+      // 触发一个自定义 DOM 事件供 Toast 捕获
+      window.dispatchEvent(new CustomEvent('storage:quota-exceeded', { detail: '存储空间不足，部分数据可能未保存' }))
+    } else {
+      console.error('存储写入失败', e)
+    }
+  }
 }
 function _validate(t) {
   return {
@@ -117,7 +125,7 @@ export const taskStore = {
 
   markPendingDelete(id) {
     if (pendingDeletes[id]) return
-    pendingDeletes[id] = setTimeout(() => confirmDelete(id), 3000)
+    pendingDeletes[id] = setTimeout(() => this.confirmDelete(id), 3000)
   },
   cancelDelete(id) {
     if (pendingDeletes[id]) { clearTimeout(pendingDeletes[id]); delete pendingDeletes[id] }
