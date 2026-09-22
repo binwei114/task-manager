@@ -25,15 +25,20 @@ function handleSave(data) {
   modal.value.show = false
 }
 function handleDelete() {
+  // 点击删除 → 先弹出确认对话框
   if (modal.value.editingId) {
     const t = taskStore.getById(modal.value.editingId)
-    taskStore.markPendingDelete(modal.value.editingId)
-    show(`已删除「${t ? t.title : ''}」`, 'info', () => taskStore.cancelDelete(modal.value.editingId))
-    modal.value.show = false
+    openConfirm(modal.value.editingId, `确定要删除「${t ? t.title : ''}」吗？`)
   }
 }
 function handleConfirm() {
-  if (modal.value.confirmId) { taskStore.confirmDelete(modal.value.confirmId); modal.value.show = false }
+  // 用户确认删除后才真正执行
+  if (modal.value.confirmId) {
+    const t = taskStore.getById(modal.value.confirmId)
+    taskStore.markPendingDelete(modal.value.confirmId)
+    show(`已删除「${t ? t.title : ''}」`, 'info', () => taskStore.cancelDelete(modal.value.confirmId))
+    modal.value.show = false
+  }
 }
 
 onMounted(() => {

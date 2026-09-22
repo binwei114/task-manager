@@ -71,7 +71,10 @@ function onDrop(e) {
     const withoutCurrent = allIds.filter(i => i !== id)
     // 找到完整列表中第 insertIdx 个可见卡片在 withoutCurrent 中的位置
     const targetVisibleId = insertIdx < visibleCardIds.length ? visibleCardIds[insertIdx] : null
-    const spliceAt = targetVisibleId ? withoutCurrent.indexOf(targetVisibleId) : withoutCurrent.length
+    // 落点指向被拖动卡片自身或无效 → 维持原位不排序
+    if (!targetVisibleId || targetVisibleId === id) return
+    const spliceAt = withoutCurrent.indexOf(targetVisibleId)
+    if (spliceAt === -1) return
     withoutCurrent.splice(spliceAt, 0, id)
 
     taskStore.reorderColumn(props.status, withoutCurrent)

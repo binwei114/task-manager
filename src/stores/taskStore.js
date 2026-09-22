@@ -23,15 +23,17 @@ function _load(status) {
   catch { return [] }
 }
 function _save(status) {
-  try { localStorage.setItem(STORE_KEYS[status], JSON.stringify(tasks[status])) }
-  catch (e) {
+  try {
+    localStorage.setItem(STORE_KEYS[status], JSON.stringify(tasks[status]))
+    return true
+  } catch (e) {
     if (e.name === 'QuotaExceededError') {
       console.warn('存储空间不足，部分数据可能没有保存')
-      // 触发一个自定义 DOM 事件供 Toast 捕获
-      window.dispatchEvent(new CustomEvent('storage:quota-exceeded', { detail: '存储空间不足，部分数据可能未保存' }))
+      window.dispatchEvent(new CustomEvent('storage:quota-exceeded', { detail: '存储空间不足，数据未保存' }))
     } else {
       console.error('存储写入失败', e)
     }
+    return false
   }
 }
 function _validate(t) {
@@ -85,8 +87,13 @@ export const taskStore = {
       createdAt: now,
       updatedAt: now,
     })
+    // 先操作内存
     tasks[task.status].push(task)
-    _save(task.status)
+    // 再持久化，写入失败则回滚
+    if (!_save(task.status)) {
+      tasks[task.status].pop()
+      return null
+    }
     return task
   },
 
@@ -96,6 +103,8 @@ export const taskStore = {
       if (idx === -1) continue
       const task = tasks[st][idx]
       const oldStatus = task.status
+      // 备份旧值以便回滚
+      const backup = { ...task, status: task.status }
 
       if (changes.title !== undefined) task.title = changes.title.trim()
       if (changes.description !== undefined) task.description = (changes.description || '').trim()
@@ -108,12 +117,22 @@ export const taskStore = {
         task.order = _nextOrder(changes.status)
         tasks[st].splice(idx, 1)
         tasks[changes.status].push(task)
-        _save(oldStatus)
-        _save(changes.status)
+        if (!_save(oldStatus) || !_save(changes.status)) {
+          // 回滚状态变更
+          tasks[changes.status].pop()
+          tasks[st].splice(idx, 0, { ...backup })
+          Object.assign(task, backup)
+          _save(oldStatus)
+          return null
+        }
       } else {
-        _save(st)
+        if (!_save(st)) {
+          // 回滚原地修改
+          Object.assign(task, backup)
+          return null
+        }
       }
-      if (pendingDeletes[id]) cancelDelete(id)
+      if (pendingDeletes[id]) this.cancelDelete(id)
       return task
     }
     return null
