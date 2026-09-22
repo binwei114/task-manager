@@ -26,10 +26,11 @@ task manager/
 ├── postcss.config.js           # PostCSS（Tailwind 插件）
 ├── src/
 │   ├── main.js                 # Vue 应用入口
-│   ├── App.vue                 # 根组件（布局 + 事件订阅）
+│   ├── App.vue                 # 根组件：初始化 Store/主题、管理弹窗状态、监听存储告警
 │   ├── stores/
 │   │   └── taskStore.js        # 响应式 Store：localStorage CRUD + 撤销删除
 │   ├── composables/
+│   │   ├── useDrag.js          # Pointer Events 拖拽控制器
 │   │   ├── useTheme.js         # 深色模式切换与系统偏好跟随
 │   │   └── useToast.js         # Toast 通知管理
 │   ├── components/
@@ -169,12 +170,12 @@ Store  (`taskStore`) 使用 `reactive()` 管理三个状态数组 (`todo` / `in-
 - **写入**（`_save`）：`localStorage.setItem()` 包装在 try-catch 中。捕获 `QuotaExceededError` 时：① `console.warn` ② `window.dispatchEvent(new CustomEvent('storage:quota-exceeded'))` → Toast 警告
 - **创建**（`create`）：先 `push` 到响应式数组，再 `_save()`，写入失败则 `pop()` 回滚
 - **更新**（`update`）：先修改并备份旧值，再 `_save()`，写入失败则恢复备份
-- **排序**（`reorderColumn`）：先深拷贝备份，再 `_save()`，写入失败则恢复备份
+- **排序**（`reorderColumn`）：先以对象展开（浅拷贝，`{ ...t }`）备份每个任务，再 `_save()`，写入失败则恢复备份
 - **删除提交**（`commitDelete`）：先 `splice` 移除，再 `_save()`，写入失败则 `splice` 插回
 - **旧格式迁移**（`_migrateOld`）：整个迁移过程在 try-catch 中，失败时静默忽略
 - **字段规范化**（`_validate`）：对读取的每条任务补全缺失字段的默认值，不抛出异常
 
-### 10.1 撤销删除机制
+### 10.2 撤销删除机制
 
 删除流程基于 `hiddenTasks`（`reactive(Set)`）实现界面显隐控制：
 
@@ -189,7 +190,7 @@ Store  (`taskStore`) 使用 `reactive()` 管理三个状态数组 (`todo` / `in-
 ## 11. 列配置解耦
 
 ```javascript
-// 列定义从硬编码改为配置数组
+// 看板三列配置（标签与图标）
 const COLUMNS = [
   { status: 'todo',         label: '待办',   icon: '📋' },
   { status: 'in-progress',  label: '进行中', icon: '🔄' },
@@ -197,11 +198,11 @@ const COLUMNS = [
 ]
 ```
 
-三列定义在 `taskStore.js` 的 `COLUMNS` 常量中，看板由 Vue 组件遍历 `COLUMNS` 渲染。Store 的存储 key 与状态一一对应。添加新列需要修改 `COLUMNS` 和 `STORE_KEYS` 两处。
+三列定义在 `taskStore.js` 的 `COLUMNS` 常量中，看板由 Vue 组件遍历 `COLUMNS` 渲染。但 Store 层多处写死了三个状态：`STORE_KEYS`、`tasks` 响应式对象的三个固定键、`_validate` 中的状态白名单（`['todo','in-progress','done']`）、`_migrateOld` 的分组逻辑等。添加新列需同步修改这些位置，并非只改 `COLUMNS` 一处。
 
 ## 12. 渲染机制
 
 - 列内任务通过 `computed` 链处理：`tasks` → `filtered`（搜索 + 隐藏过滤）→ `sorted`（按 `order` + `createdAt`）
 - Vue 的响应式系统自动追踪 `reactive` 数组的变化，仅更新受影响的 DOM
 - 拖拽时的列高亮通过 `computed`（`drag.state.targetStatus === props.status`）实现
-- 搜索过滤仅影响 `computed` 返回值，不创建/销毁 DOM 节点
+- 搜索过滤改变 `computed` 返回值，`v-for` 据此增删对应的卡片 DOM 节点（匹配数变化时卡片节点随之创建或移除）

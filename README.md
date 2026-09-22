@@ -64,7 +64,6 @@ task manager/
 ├── src/
 │   ├── main.js                # Vue app mount
 │   ├── App.vue                # Root component
-│   ├── assets/style.css       # Tailwind directives + custom styles
 │   ├── stores/
 │   │   └── taskStore.js       # Reactive store (localStorage CRUD)
 │   ├── composables/
@@ -124,7 +123,7 @@ task manager/
 - **撤销删除** — 3 秒内可通过 Toast 撤销删除
 - **搜索筛选** — 按标题/描述实时过滤
 - **深色模式** — 自动跟随系统偏好；手动切换后持久化
-- **存储安全** — 先写策略 + `QuotaExceededError` 回滚 + Toast 警告
+- **存储安全** — 先修改内存中的响应式数据再写入 localStorage；捕获 `QuotaExceededError` 时回滚相关操作并显示 Toast 警告
 - **响应式布局** — 桌面三列等宽，窄屏横向滚动 + 吸附滚动
 
 ### 快速启动
@@ -157,7 +156,6 @@ task manager/
 ├── src/
 │   ├── main.js                # Vue 应用挂载
 │   ├── App.vue                # 根组件
-│   ├── assets/style.css       # Tailwind 指令 + 自定义样式
 │   ├── stores/
 │   │   └── taskStore.js       # 响应式 Store（localStorage CRUD）
 │   ├── composables/
