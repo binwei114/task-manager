@@ -181,9 +181,3 @@ task manager/
 - **事件总线已移除**：Vue 响应式系统（`reactive`、`computed`、`watch`）取代了旧的自定义事件总线
 - **删除安全网**：删除后立即用 `reactive(Set)` 从 UI 隐藏；3 秒定时器到期后调用 `commitDelete` 从数组移除 + `_save()`。若 `_save()` 失败则插回任务，Toast 警告用户
 - **拖拽可靠性**：Pointer Events 绑定在 `document`（不使用 `setPointerCapture`），`elementsFromPoint` 命中测试，`drag-source-hidden` CSS class 使源卡片从 flex 布局坍缩
-
----
-
-### Reference / 参考资料
-
-课堂实践推荐技术选型：[菜鸟教程 — vibe-coding 实践](https://www.runoob.com/vibe-coding/vibe-coding-practice.html)
