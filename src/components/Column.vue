@@ -11,7 +11,6 @@ const tasks = computed(() => taskStore.getByStatus(props.status))
 const filtered = computed(() => {
   const q = (props.searchWord || '').toLowerCase().trim()
   const visible = q ? tasks.value.filter(t => t.title.toLowerCase().includes(q) || t.description.toLowerCase().includes(q)) : tasks.value
-  // 排除待删除（隐藏）任务
   return visible.filter(t => !taskStore.isHidden(t.id))
 })
 
@@ -47,16 +46,13 @@ function onDrop(e) {
   const task = taskStore.getById(id)
   if (!task) return
   if (task.status === props.status) {
-    // 同列排序 — 基于完整数据列表操作，避免搜索过滤导致数据丢失
     const listEl = e.currentTarget
     const visibleCardIds = [...listEl.querySelectorAll('[data-task-id]')].map(el => el.dataset.taskId).filter(Boolean)
-    // 获取该列的完整任务 ID 列表（按当前 order 排序）
     const fullOrdered = [...taskStore.getByStatus(props.status)].sort(
       (a, b) => a.order - b.order || (b.createdAt > a.createdAt ? 1 : -1)
     )
     const allIds = fullOrdered.map(t => t.id)
 
-    // 计算可见卡片的新插入位置
     const offsetY = e.clientY - listEl.getBoundingClientRect().top
     let insertIdx = visibleCardIds.length
     for (let i = 0; i < visibleCardIds.length; i++) {
@@ -69,19 +65,14 @@ function onDrop(e) {
       }
     }
 
-    // 从完整列表中移除当前卡片，再按可见卡片新顺序重新插入
     const withoutCurrent = allIds.filter(i => i !== id)
-
-    // 落点指向被拖动卡片自身 → 维持原位不排序
     if (insertIdx < visibleCardIds.length && visibleCardIds[insertIdx] === id) return
 
     if (insertIdx >= visibleCardIds.length) {
-      // 拖到末尾的最后 → 插入列尾
       taskStore.reorderColumn(props.status, [...withoutCurrent, id])
       return
     }
 
-    // 找到完整列表中第 insertIdx 个可见卡片在 withoutCurrent 中的位置
     const targetVisibleId = visibleCardIds[insertIdx]
     const spliceAt = withoutCurrent.indexOf(targetVisibleId)
     if (spliceAt === -1) return
@@ -102,20 +93,22 @@ function deletePending(id) {
 </script>
 
 <template>
-  <div class="flex-1 min-w-[260px] max-w-[380px] bg-gray-200 dark:bg-[#0f3460] rounded-lg p-3 flex flex-col transition-colors">
-    <div class="text-xs font-semibold text-gray-500 dark:text-gray-400 pb-2 px-1">
-      {{ icon }} {{ label }} ({{ filtered.length }})<span v-if="overdueCount" class="text-red-500 dark:text-red-400"> ⚠️{{ overdueCount }}逾期</span>
+  <div class="flex-1 min-w-[280px] max-w-[400px] bg-gray-100 dark:bg-gray-800/60 rounded-xl p-4 flex flex-col transition-colors snap-start">
+    <div class="flex items-center gap-2 pb-3 px-0.5">
+      <span class="text-base font-semibold text-gray-700 dark:text-gray-300">{{ icon }} {{ label }}</span>
+      <span class="ml-auto inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 text-xs font-semibold rounded-full bg-white dark:bg-gray-700 text-gray-500 dark:text-gray-400">{{ filtered.length }}</span>
+      <span v-if="overdueCount" class="text-xs font-semibold text-red-500 dark:text-red-400">⚠️{{ overdueCount }}</span>
     </div>
 
     <div
-      class="flex flex-col gap-2 min-h-[48px] p-1 rounded-md transition-colors"
-      :class="{ 'bg-indigo-100/50 dark:bg-indigo-900/30 outline-2 outline-dashed outline-indigo-400': isDragOver }"
+      class="flex flex-col gap-3 min-h-[180px] p-2 rounded-lg transition-colors"
+      :class="{ 'bg-indigo-50 dark:bg-indigo-900/20 ring-2 ring-dashed ring-indigo-400/40': isDragOver }"
       @dragover="onDragOver"
       @dragenter="onDragEnter"
       @dragleave="onDragLeave"
       @drop="onDrop"
     >
-      <div v-if="sorted.length === 0" class="text-center py-4 text-xs text-gray-400">暂无任务</div>
+      <div v-if="sorted.length === 0" class="flex-1 flex items-center justify-center text-sm text-gray-400 dark:text-gray-500 select-none">暂无任务</div>
       <TaskCard
         v-for="task in sorted"
         :key="task.id"

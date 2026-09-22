@@ -10,8 +10,11 @@ const isTouch = 'ontouchstart' in window
 
 const overdue = computed(() => isOverdue(props.task))
 
-const priorityLabel = { high: '高', medium: '中', low: 'low' }
-const priorityColor = { high: 'bg-red-500', medium: 'bg-yellow-400', low: 'bg-green-500' }
+const priorityConfig = {
+  high: { label: '高', cls: 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300' },
+  medium: { label: '中', cls: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-300' },
+  low: { label: '低', cls: 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300' },
+}
 
 function onDragStart(e) {
   e.dataTransfer.setData('text/plain', props.task.id)
@@ -35,16 +38,18 @@ function moveToStatus(status) {
     draggable="true"
     @dragstart="onDragStart"
     @click="$emit('click')"
-    class="group flex items-start gap-2 bg-white dark:bg-[#16213e] rounded-md p-3 shadow-sm hover:shadow-md hover:-translate-y-0.5 cursor-grab active:cursor-grabbing transition-all duration-150"
+    class="group flex items-start gap-3 bg-white dark:bg-gray-800 rounded-xl p-4 border border-gray-100 dark:border-gray-700/50 shadow-sm hover:shadow-md hover:-translate-y-0.5 cursor-grab active:cursor-grabbing transition-all duration-150"
   >
-    <!-- 优先级色标 -->
-    <div :class="`w-2.5 h-2.5 rounded-full mt-1 flex-shrink-0 ${priorityColor[task.priority]}`"></div>
+    <!-- 优先级色标（文字标签） -->
+    <span
+      :class="`inline-flex items-center justify-center w-7 h-5 text-[11px] font-bold rounded flex-shrink-0 mt-0.5 ${priorityConfig[task.priority].cls}`"
+    >{{ priorityConfig[task.priority].label }}</span>
 
     <!-- 内容 -->
     <div class="flex-1 min-w-0">
-      <div class="text-sm font-semibold break-words">{{ task.title }}</div>
-      <div v-if="task.description" class="text-xs text-gray-500 dark:text-gray-400 truncate mt-0.5">{{ task.description }}</div>
-      <div class="flex items-center gap-2 mt-1.5 text-[10px] text-gray-400 dark:text-gray-500">
+      <div class="text-[15px] font-semibold leading-snug break-words">{{ task.title }}</div>
+      <div v-if="task.description" class="text-sm text-gray-500 dark:text-gray-400 mt-1 leading-snug line-clamp-2">{{ task.description }}</div>
+      <div class="flex items-center gap-3 mt-2 text-xs text-gray-400 dark:text-gray-500">
         <span v-if="task.dueDate" :class="[overdue ? 'text-red-500 dark:text-red-400 font-semibold' : '']">
           {{ overdue ? '⚠️ ' : '📅 ' }}{{ formatDate(task.dueDate) }}
         </span>
@@ -56,17 +61,17 @@ function moveToStatus(status) {
     <div v-if="isTouch" class="relative">
       <button
         @click.stop="touchMenu = !touchMenu"
-        class="w-5 h-5 flex items-center justify-center text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-sm"
+        class="w-6 h-6 flex items-center justify-center text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 text-base"
       >⋮</button>
       <div
         v-if="touchMenu"
-        class="absolute right-0 top-6 z-40 bg-white dark:bg-[#16213e] border border-gray-200 dark:border-gray-700 rounded-md shadow-lg overflow-hidden"
+        class="absolute right-0 top-7 z-40 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg overflow-hidden"
       >
         <button
           v-for="col in COLUMNS"
           :key="col.status"
           @click.stop="moveToStatus(col.status)"
-          class="block w-full text-left px-3 py-2 text-xs hover:bg-gray-100 dark:hover:bg-gray-700 whitespace-nowrap"
+          class="block w-full text-left px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 whitespace-nowrap"
         >移动到「{{ col.label }}」</button>
       </div>
     </div>
