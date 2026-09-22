@@ -9,7 +9,7 @@ const emit = defineEmits(['card-click', 'delete-pending'])
 const tasks = computed(() => taskStore.getByStatus(props.status))
 
 const filtered = computed(() => {
-  const q = searchWord.value.toLowerCase().trim()
+  const q = (props.searchWord || '').toLowerCase().trim()
   return q ? tasks.value.filter(t => t.title.toLowerCase().includes(q) || t.description.toLowerCase().includes(q)) : tasks.value
 })
 
