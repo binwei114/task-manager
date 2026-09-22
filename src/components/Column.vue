@@ -69,10 +69,18 @@ function onDrop(e) {
 
     // 从完整列表中移除当前卡片，再按可见卡片新顺序重新插入
     const withoutCurrent = allIds.filter(i => i !== id)
+
+    // 落点指向被拖动卡片自身 → 维持原位不排序
+    if (insertIdx < visibleCardIds.length && visibleCardIds[insertIdx] === id) return
+
+    if (insertIdx >= visibleCardIds.length) {
+      // 拖到末尾的最后 → 插入列尾
+      taskStore.reorderColumn(props.status, [...withoutCurrent, id])
+      return
+    }
+
     // 找到完整列表中第 insertIdx 个可见卡片在 withoutCurrent 中的位置
-    const targetVisibleId = insertIdx < visibleCardIds.length ? visibleCardIds[insertIdx] : null
-    // 落点指向被拖动卡片自身或无效 → 维持原位不排序
-    if (!targetVisibleId || targetVisibleId === id) return
+    const targetVisibleId = visibleCardIds[insertIdx]
     const spliceAt = withoutCurrent.indexOf(targetVisibleId)
     if (spliceAt === -1) return
     withoutCurrent.splice(spliceAt, 0, id)

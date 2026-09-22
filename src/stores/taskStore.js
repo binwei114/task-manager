@@ -153,15 +153,26 @@ export const taskStore = {
     this.cancelDelete(id)
     for (const st of Object.keys(STORE_KEYS)) {
       const idx = tasks[st].findIndex(t => t.id === id)
-      if (idx !== -1) { tasks[st].splice(idx, 1); _save(st); return }
+      if (idx !== -1) {
+        const [removed] = tasks[st].splice(idx, 1)
+        if (!_save(st)) {
+          // 写入失败 → 回滚
+          tasks[st].splice(idx, 0, removed)
+        }
+        return
+      }
     }
   },
 
   reorderColumn(status, orderedIds) {
     const map = {}
+    const backup = [...tasks[status]]
     tasks[status].forEach(t => { map[t.id] = t })
     tasks[status] = orderedIds.map((id, i) => { map[id].order = i; return map[id] })
-    _save(status)
+    if (!_save(status)) {
+      // 写入失败 → 回滚
+      tasks[status] = backup
+    }
   },
 
   hasPendingDelete(id) { return !!pendingDeletes[id] },

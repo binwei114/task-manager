@@ -33,10 +33,11 @@ function handleDelete() {
 }
 function handleConfirm() {
   // 用户确认删除后才真正执行
-  if (modal.value.confirmId) {
-    const t = taskStore.getById(modal.value.confirmId)
-    taskStore.markPendingDelete(modal.value.confirmId)
-    show(`已删除「${t ? t.title : ''}」`, 'info', () => taskStore.cancelDelete(modal.value.confirmId))
+  const id = modal.value.confirmId   // ← 先捕获到局部变量，避免后续 modal 被覆盖
+  if (id) {
+    const t = taskStore.getById(id)
+    taskStore.markPendingDelete(id)
+    show(`已删除「${t ? t.title : ''}」`, 'info', () => taskStore.cancelDelete(id))
     modal.value.show = false
   }
 }
