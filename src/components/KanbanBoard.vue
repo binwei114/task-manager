@@ -1,10 +1,14 @@
 <script setup>
-import { inject } from 'vue'
+import { inject, provide } from 'vue'
 import { taskStore, COLUMNS } from '../stores/taskStore.js'
+import { useDrag } from '../composables/useDrag.js'
 import Column from './Column.vue'
 
 const emit = defineEmits(['edit-task', 'confirm-delete'])
 const searchWord = inject('searchWord', '')
+
+const drag = useDrag()
+provide('drag', drag)
 </script>
 
 <template>

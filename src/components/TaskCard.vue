@@ -1,9 +1,12 @@
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, ref, inject } from 'vue'
 import { taskStore, isOverdue, formatDate, COLUMNS } from '../stores/taskStore.js'
 
 const props = defineProps({ task: Object })
 const emit = defineEmits(['click', 'delete-pending'])
+
+const drag = inject('drag', null)
+const cardEl = ref(null)
 
 const touchMenu = ref(false)
 const isTouch = 'ontouchstart' in window
@@ -16,18 +19,11 @@ const priorityConfig = {
   low: { label: '低', cls: 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300' },
 }
 
-function onDragStart(e) {
-  e.dataTransfer.setData('text/plain', props.task.id)
-  e.dataTransfer.effectAllowed = 'move'
-  // 立即隐藏源卡片并使其从 flex 布局中坍缩，其他卡片自然补位
-  const el = e.currentTarget
-  el.classList.add('dragging-source')
-}
-
-function onDragEnd(e) {
-  // 恢复源卡片显示（无论拖拽是否成功放下）
-  const el = e.currentTarget
-  el.classList.remove('dragging-source')
+function onPointerDown(e) {
+  if (!drag || !cardEl.value) return
+  // 忽略触屏菜单操作
+  if (e.target.closest('.card-menu-btn, .touch-menu, .touch-menu-item, .touch-menu *')) return
+  drag.pointerDown(e, cardEl.value)
 }
 
 function handleDelete() {
@@ -43,12 +39,11 @@ function moveToStatus(status) {
 
 <template>
   <div
+    ref="cardEl"
     :data-task-id="task.id"
-    draggable="true"
-    @dragstart="onDragStart"
-    @dragend="onDragEnd"
+    @pointerdown="onPointerDown"
     @click="$emit('click')"
-    class="group flex items-start gap-3 bg-white dark:bg-gray-800 rounded-xl p-4 border border-gray-100 dark:border-gray-700/50 shadow-sm hover:shadow-md hover:-translate-y-0.5 cursor-grab active:cursor-grabbing transition-all duration-150"
+    class="group flex items-start gap-3 bg-white dark:bg-gray-800 rounded-xl p-4 border border-gray-100 dark:border-gray-700/50 shadow-sm hover:shadow-md hover:-translate-y-0.5 cursor-default transition-all duration-150 select-none"
   >
     <!-- 优先级色标（文字标签） -->
     <span
@@ -68,20 +63,20 @@ function moveToStatus(status) {
     </div>
 
     <!-- 触屏菜单 -->
-    <div v-if="isTouch" class="relative">
+    <div v-if="isTouch" class="relative card-menu-btn">
       <button
         @click.stop="touchMenu = !touchMenu"
         class="w-6 h-6 flex items-center justify-center text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 text-base"
       >⋮</button>
       <div
         v-if="touchMenu"
-        class="absolute right-0 top-7 z-40 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg overflow-hidden"
+        class="touch-menu absolute right-0 top-7 z-40 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg overflow-hidden"
       >
         <button
           v-for="col in COLUMNS"
           :key="col.status"
           @click.stop="moveToStatus(col.status)"
-          class="block w-full text-left px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 whitespace-nowrap"
+          class="touch-menu-item block w-full text-left px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 whitespace-nowrap"
         >移动到「{{ col.label }}」</button>
       </div>
     </div>

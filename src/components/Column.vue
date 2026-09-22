@@ -1,10 +1,14 @@
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, ref, inject, watch } from 'vue'
 import { taskStore, isOverdue, formatDate } from '../stores/taskStore.js'
 import TaskCard from './TaskCard.vue'
 
 const props = defineProps({ status: String, label: String, icon: String, searchWord: { type: String, default: '' } })
 const emit = defineEmits(['card-click', 'delete-pending'])
+
+const drag = inject('drag', null)
+const isDragTarget = ref(false)
+const listEl = ref(null)
 
 const tasks = computed(() => taskStore.getByStatus(props.status))
 
@@ -20,68 +24,14 @@ const sorted = computed(() =>
 
 const overdueCount = computed(() => filtered.value.filter(t => isOverdue(t)).length)
 
-// 拖拽状态
-let dragCounter = 0
-const isDragOver = ref(false)
-
-function onDragOver(e) {
-  e.preventDefault()
-  e.dataTransfer.dropEffect = 'move'
-}
-function onDragEnter(e) {
-  e.preventDefault()
-  dragCounter++
-  isDragOver.value = true
-}
-function onDragLeave() {
-  dragCounter--
-  if (dragCounter <= 0) { dragCounter = 0; isDragOver.value = false }
-}
-function onDrop(e) {
-  e.preventDefault()
-  isDragOver.value = false
-  dragCounter = 0
-  const id = e.dataTransfer.getData('text/plain')
-  if (!id) return
-  const task = taskStore.getById(id)
-  if (!task) return
-  if (task.status === props.status) {
-    const listEl = e.currentTarget
-    const visibleCardIds = [...listEl.querySelectorAll('[data-task-id]')].map(el => el.dataset.taskId).filter(Boolean)
-    const fullOrdered = [...taskStore.getByStatus(props.status)].sort(
-      (a, b) => a.order - b.order || (b.createdAt > a.createdAt ? 1 : -1)
-    )
-    const allIds = fullOrdered.map(t => t.id)
-
-    const offsetY = e.clientY - listEl.getBoundingClientRect().top
-    let insertIdx = visibleCardIds.length
-    for (let i = 0; i < visibleCardIds.length; i++) {
-      const el = listEl.querySelector(`[data-task-id="${visibleCardIds[i]}"]`)
-      if (!el) continue
-      const rect = el.getBoundingClientRect()
-      if (offsetY < rect.top + rect.height / 2 - listEl.getBoundingClientRect().top) {
-        insertIdx = i
-        break
-      }
-    }
-
-    const withoutCurrent = allIds.filter(i => i !== id)
-    if (insertIdx < visibleCardIds.length && visibleCardIds[insertIdx] === id) return
-
-    if (insertIdx >= visibleCardIds.length) {
-      taskStore.reorderColumn(props.status, [...withoutCurrent, id])
-      return
-    }
-
-    const targetVisibleId = visibleCardIds[insertIdx]
-    const spliceAt = withoutCurrent.indexOf(targetVisibleId)
-    if (spliceAt === -1) return
-    withoutCurrent.splice(spliceAt, 0, id)
-
-    taskStore.reorderColumn(props.status, withoutCurrent)
-  } else {
-    taskStore.updateStatus(id, props.status)
-  }
+// 通过 watch drag state 更新高亮
+if (drag) {
+  watch(() => drag.state.targetStatus, (val) => {
+    isDragTarget.value = val === props.status
+  })
+  watch(() => drag.state.ended, () => {
+    isDragTarget.value = false
+  })
 }
 
 function cardClick(id) {
@@ -101,12 +51,10 @@ function deletePending(id) {
     </div>
 
     <div
-      class="flex flex-col gap-3 min-h-[200px] flex-1 p-2 rounded-lg transition-colors"
-      :class="{ 'bg-indigo-50 dark:bg-indigo-900/20 ring-2 ring-dashed ring-indigo-400/40': isDragOver }"
-      @dragover="onDragOver"
-      @dragenter="onDragEnter"
-      @dragleave="onDragLeave"
-      @drop="onDrop"
+      ref="listEl"
+      class="task-list flex flex-col gap-3 min-h-[200px] flex-1 p-2 rounded-lg transition-colors"
+      :class="{ 'bg-indigo-50 dark:bg-indigo-900/20 ring-2 ring-inset ring-indigo-400/40': isDragTarget }"
+      :data-status="status"
     >
       <div v-if="sorted.length === 0" class="flex-1 flex items-center justify-center text-sm text-gray-400 dark:text-gray-500 select-none">暂无任务</div>
       <TaskCard

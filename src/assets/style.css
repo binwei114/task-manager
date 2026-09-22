@@ -8,8 +8,24 @@
 ::-webkit-scrollbar-thumb { background: #94a3b8; border-radius: 3px; }
 .dark ::-webkit-scrollbar-thumb { background: #475569; }
 
+/* 拖拽浮层卡片 — 跟随鼠标的克隆 */
+.drag-floating-card {
+  opacity: 0.92;
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  transform: rotate(3deg) scale(1.04);
+  transition: none;
+  pointer-events: none;
+  cursor: grabbing;
+  background: inherit;
+  border: 1px solid rgba(99, 102, 241, 0.4);
+}
+.dark .drag-floating-card {
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
+
 /* 拖拽中源卡片 — 从 flex 布局坍缩，其他卡片补位 */
-.dragging-source {
+.drag-source-hidden {
   opacity: 0 !important;
   height: 0 !important;
   min-height: 0 !important;
