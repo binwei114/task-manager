@@ -8,7 +8,7 @@ const searchWord = inject('searchWord', '')
 </script>
 
 <template>
-  <div class="flex-1 flex gap-5 p-4 sm:p-6 overflow-x-auto items-start max-w-[1440px] mx-auto w-full snap-x snap-mandatory">
+  <div class="flex-1 flex gap-5 p-4 sm:p-6 overflow-x-auto items-stretch max-w-[1440px] mx-auto w-full snap-x snap-mandatory">
     <Column
       v-for="col in COLUMNS"
       :key="col.status"

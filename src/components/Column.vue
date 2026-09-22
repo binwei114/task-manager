@@ -93,7 +93,7 @@ function deletePending(id) {
 </script>
 
 <template>
-  <div class="flex-1 min-w-[280px] max-w-[400px] bg-gray-100 dark:bg-gray-800/60 rounded-xl p-4 flex flex-col transition-colors snap-start">
+  <div class="flex-1 min-w-[280px] max-w-[400px] bg-white dark:bg-gray-800/60 rounded-xl p-4 flex flex-col transition-colors snap-start border border-gray-200 dark:border-gray-700/40">
     <div class="flex items-center gap-2 pb-3 px-0.5">
       <span class="text-base font-semibold text-gray-700 dark:text-gray-300">{{ icon }} {{ label }}</span>
       <span class="ml-auto inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 text-xs font-semibold rounded-full bg-white dark:bg-gray-700 text-gray-500 dark:text-gray-400">{{ filtered.length }}</span>
@@ -101,7 +101,7 @@ function deletePending(id) {
     </div>
 
     <div
-      class="flex flex-col gap-3 min-h-[180px] p-2 rounded-lg transition-colors"
+      class="flex flex-col gap-3 min-h-[200px] flex-1 p-2 rounded-lg transition-colors"
       :class="{ 'bg-indigo-50 dark:bg-indigo-900/20 ring-2 ring-dashed ring-indigo-400/40': isDragOver }"
       @dragover="onDragOver"
       @dragenter="onDragEnter"

@@ -1,7 +1,7 @@
 <script setup>
 import { ref } from 'vue'
 defineProps({ isDark: Boolean })
-const emit = defineEmits(['toggle-theme'])
+const emit = defineEmits(['toggle-theme', 'create-task'])
 
 const searchWord = defineModel('search', { default: '' })
 </script>
