@@ -9,11 +9,11 @@
 | 构建工具 | Vite | 极速 HMR、原生 ESM、开箱即用支持 Vue SFC |
 | 样式方案 | Tailwind CSS 3 | 原子化 CSS、深色模式内置支持、快速开发 |
 | 存储 | localStorage（按状态列拆分 key） | 纯前端、刷新不丢失；拆分 key 减少单次序列化量 |
-| 拖拽 | HTML5 Drag & Drop API + 触屏降级 | 桌面拖拽原生支持；触屏设备降级为「移动至」下拉菜单 |
+| 拖拽 | Pointer Events（自研）| 基于 `pointerdown/move/up`，绑定到 `document`；`elementsFromPoint` 命中测试 |
 | 包管理 | npm | 标准生态 |
 | 开发工具 | VSCode + Vite Dev Server | 热更新开发体验 |
 
-**关于拖拽的架构决策**：对桌面端用户使用 HTML5 Drag & Drop；对触屏设备（`'ontouchstart' in window`）自动降级为在卡片上显示「移动至…」下拉菜单，确保所有设备可操作。
+**关于拖拽的架构决策**：采用自研 Pointer Events 方案（`useDrag.js` composable），将 `pointermove/up/cancel` 绑定到 `document`，并通过 `document.elementsFromPoint()` 进行命中测试。对触屏设备（`'ontouchstart' in window`）自动降级为在卡片上显示「移动至…」下拉菜单，确保所有设备可操作。
 
 ## 2. 目录结构
 
@@ -111,69 +111,51 @@ task manager/
 
 **向后兼容**：读取旧数据（单 key 格式 `taskmanager_tasks`）时自动迁移到新格式，并补全缺失字段默认值。
 
-## 5. 数据流 — 事件总线模式
+## 5. 数据流 — Vue 响应式驱动
+
+Store  (`taskStore`) 使用 `reactive()` 管理三个状态数组 (`todo` / `in-progress` / `done`)。组件通过 `computed` 读取数组并自动追踪依赖。任何写操作（`create`、`update`、`reorderColumn`、`commitDelete`）修改响应式数据后调用 `_save()` 持久化到 localStorage。Vue 的响应式系统自动触发视图更新，无需额外事件总线。
 
 ```
-用户操作 → 事件监听 → store.js CRUD 方法
-                          ├── 更新内存 Map（按 status 分桶）
-                          ├── 写入对应状态列的 localStorage key
-                          ├── 容量检查（捕获 QuotaExceededError）
-                          └── bus.emit('task:created' | 'task:updated' | 'task:deleted', data)
+用户操作
+  ├── 新建/编辑 → taskStore.create() / update()
+  │                  ├── 修改 reactive tasks[...]
+  │                  ├── _save() → localStorage
+  │                  └── Vue 响应式 → 组件重渲染
+  ├── 拖拽      → useDrag.js → pointerup → taskStore.updateStatus() / reorderColumn()
+  │                                ├── 修改 reactive tasks[...]
+  │                                └── _save() → localStorage
+  └── 删除      → taskStore.markPendingDelete()
+                     ├── hiddenTasks.add(id) → Column 自动过滤
+                     ├── 3s 后 commitDelete() → splice + _save()
+                     └── Vue 响应式 → 隐藏的卡片立即从 DOM 消失
 
-board.js ──bus.on('task:created') / bus.on('task:updated') / bus.on('task:deleted') / bus.on('task:status-changed')──→ 重绘受影响的列
-modal.js ──bus.on('task:created') / bus.on('task:updated')──→ 关闭弹窗
-search.js ──bus.on('task:updated') / bus.on('task:deleted')──→ 刷新搜索结果（如果搜索激活）
-confirm.js ──独立组件，不依赖 Store
-
-深色切换 → theme.js
-          ├── 读取 window.matchMedia('(prefers-color-scheme: dark)')
-          ├── 用户手动切换 → 写入 localStorage + 标记 userOverridden
-          ├── 系统主题变化 → 仅当 !userOverridden 时自动跟随
-          └── 更新 <html> 的 data-theme 属性
+深色切换 → useTheme composable
+           ├── 读取 window.matchMedia('(prefers-color-scheme: dark)')
+           ├── 用户手动切换 → 写入 localStorage + 标记 userOverridden
+           ├── 系统主题变化 → 仅当 !userOverridden 时自动跟随
+           └── 更新 <html> 的 class 包含 .dark
 ```
-
-**核心变更**：引入事件总线后，Store 不再直接调用任何视图方法。所有视图模块通过 `bus.on()` 订阅感兴趣的事件。这是一个 ≤30 行的解耦层。
-
-**事件总线接口**：
-```javascript
-// js/event-bus.js
-bus.on(event, fn)     // 订阅事件
-bus.emit(event, data) // 发布事件
-bus.off(event, fn)    // 取消订阅
-```
-
-**事件清单**：
-| 事件名 | 数据载荷 | 发布时机 |
-|--------|---------|---------|
-| `task:created` | `{ task }` | store.createTask() 成功后 |
-| `task:updated` | `{ id, changes }` | store.updateTask() 成功后 |
-| `task:deleted` | `{ id }` | store.confirmDelete() 到期执行后 |
-| `task:status-changed` | `{ id, fromStatus, toStatus, order }` | 拖拽或下拉改变状态后 |
-| `task:delete-pending` | `{ id }` | store.markPendingDelete() 调用后 |
-| `task:delete-cancelled` | `{ id }` | store.cancelDelete() 撤销删除后 |
 
 ## 6. 拖拽交互流程
 
-### 6.1 桌面拖拽（HTML5 Drag & Drop）
+### 6.1 桌面拖拽（Pointer Events）
 
-1. `task-card` 设置 `draggable="true"`，`dragstart` 保存任务 ID 到 `dataTransfer`
-2. `.task-list` 监听 `dragover`（阻止默认以允许 drop）+ `dragenter`/`dragleave` 视觉高亮
-3. `.task-list` 监听 `drop`：
-   - **跨列**：读取任务 ID + 目标列 status → `store.updateTaskStatus(id, newStatus, newOrder)` → 重绘两列
-   - **同列排序**：根据鼠标落点位置（`offsetY` 与子元素位置对比）计算新位置 → `store.reorderTask(id, targetColumnStatus)` → 被拖拽列的所有卡片**重新编号** `order=0,1,2,…`（简单稳定，防止浮点数膨胀）
-4. 使用 `dragend` 清理拖拽状态
+基于 `useDrag.js` composable，采用 Pointer Events 实现：
+
+1. `pointerdown` 在 TaskCard 触发 → 记录初始位置、源卡片 DOM、源状态；将 `pointermove` / `pointerup` / `pointercancel` 绑定到 `document`
+2. 鼠标移动超过 5px 后进入拖拽模式：
+   - 源卡片添加 `drag-source-hidden` class → 从 flex 布局坍缩，其他卡片补位
+   - 创建浮层卡片 (`drag-floating-card`) 克隆，`pointer-events: none`，跟随鼠标
+   - `document.elementsFromPoint()` 检测目标列，更新 `state.targetStatus` → Column 高亮
+3. `pointerup` 时计算插入位置，调用 `taskStore.updateStatus()`（跨列）或 `taskStore.reorderColumn()`（同列排序）
+4. `pointercancel` 或 `Escape` → 清理浮层、恢复源卡片，不提交数据
 
 ### 6.2 触屏降级
 
 - 设备检测：`'ontouchstart' in window`
 - 触屏设备上卡片右下角显示「⋮」菜单按钮
 - 点击弹出下拉操作：移动至「待办 / 进行中 / 完成」
-- 选择后调用 `store.updateTaskStatus()`，数据流与拖拽一致
-
-### 6.3 键盘操作（无障碍）
-
-- 卡片获得焦点后，快捷键 `Ctrl+→` / `Ctrl+←` 切换至相邻状态列（不改变同列排序）
-- 提供 `aria-label` 和 `role` 标注
+- 选择后调用 `taskStore.updateStatus()`，效果与拖拽一致
 
 ## 7. 深色模式
 
@@ -194,7 +176,7 @@ bus.off(event, fn)    // 取消订阅
 
 ## 9. 搜索与筛选
 
-- 搜索框在页头右侧，输入即搜索（300ms 防抖）
+- 搜索框在页头右侧，输入即搜索，实时过滤
 - 按标题和描述做模糊匹配（`includes()` 大小写不敏感）
 - 搜索激活时，所有列仅显示匹配的卡片；列计数变为匹配数
 - 清空搜索框恢复完整看板
@@ -203,21 +185,21 @@ bus.off(event, fn)    // 取消订阅
 ## 10. 存储安全与异常处理
 
 - **容量预警**：每次 `setItem` 前用探针检查 `QuotaExceededError`
-- **异常捕获**：所有 `localStorage` 操作包裹 try-catch，捕获到错误时：① bus.emit 警告事件 ② 界面显示 toast 提示
+- **异常捕获**：所有 `localStorage` 操作包裹 try-catch，捕获到错误时：① `window.dispatchEvent(new CustomEvent('storage:quota-exceeded', …))` 通知 Toast ② 界面显示 toast 提示
 - **向前兼容**：`store.init()` 时检测旧数据格式（单 key），自动迁移到三 key 新格式
 - **数据校验**：`store.init()` 对每条任务做 schema 校验，修补缺失字段默认值
 
 ### 10.1 撤销删除机制
 
-`store.deleteTask(id)` 实现延迟删除流程：
+删除流程基于 `hiddenTasks`（`reactive(Set)`）实现界面显隐控制：
 
-1. 调用 `store.markPendingDelete(id)` → 将任务标记 `_pendingDelete: true`，存入内存（不清除 DOM）
-2. 触发 `bus.emit('task:delete-pending', { id })` → 视图移除卡片 + 弹出「已删除」toast（含「撤销」按钮）
-3. 创建 3 秒定时器（`setTimeout`），到期后执行 `store.confirmDelete(id)`：
-   - 从内存和 localStorage 彻底移除该任务
-   - 触发 `bus.emit('task:deleted', { id })`
-4. **撤销流程**：用户点击「撤销」→ 调用 `store.cancelDelete(id)` 清除 `_pendingDelete` 标记 → 清除定时器 → 触发 `bus.emit('task:delete-cancelled', { id })`（视图恢复卡片）
-5. 如果用户在 pending 期间又对同一任务进行编辑/拖拽操作，自动取消删除 pending
+1. 用户确认删除 → `store.markPendingDelete(id)` 将该 ID 加入 `hiddenTasks`，卡片从 Column 的过滤计算属性中消失（立即隐藏）
+2. 同时启动 3 秒定时器，到期后执行 `store.commitDelete(id)`：
+   - 从 `tasks[status]` 数组中 `splice` 移除
+   - 调用 `_save(status)` 持久化
+   - 若 `_save()` 写入失败，将任务 `splice` 插回原位，`hiddenTasks.delete(id)`，并触发 `CustomEvent` Toast 警告
+3. **撤销流程**：用户点击 Toast「撤销」→ `store.cancelDelete(id)` 清除定时器 + `hiddenTasks.delete(id)`，任务重新出现
+4. 如果用户在 pending 期间对同一任务进行编辑/拖拽操作，自动取消删除 pending
 
 ## 11. 列配置解耦
 

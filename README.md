@@ -29,7 +29,7 @@ A lightweight, browser-based kanban task management tool built with **Vue 3 + Vi
 - **Drag & drop** — Pointer Events-based: cross-column move, same-column reorder; touch devices fall back to a context menu
 - **Due dates** — Date picker + overdue warning (⚠️)
 - **Undo delete** — 3-second undo window with a toast notification
-- **Search** — Real-time filter by title / description (300ms debounce)
+- **Search** — Real-time filter by title / description
 - **Dark mode** — Follows system preference; manual toggle persisted to localStorage
 - **Storage safety** — Write-ahead strategy with rollback on `QuotaExceededError`; user-facing toast warnings
 - **Responsive** — Three-column layout on desktop, horizontal scroll on narrow screens with snap-scroll
@@ -119,7 +119,7 @@ task manager/
 - **拖拽操作** — 基于 Pointer Events：跨列移动/同列排序；触屏设备降级为菜单操作
 - **截止日期** — 日期选择器 + 逾期警告（⚠️）
 - **撤销删除** — 3 秒内可通过 Toast 撤销删除
-- **搜索筛选** — 按标题/描述实时过滤（300ms 防抖）
+- **搜索筛选** — 按标题/描述实时过滤
 - **深色模式** — 自动跟随系统偏好；手动切换后持久化
 - **存储安全** — 先写策略 + `QuotaExceededError` 回滚 + Toast 警告
 - **响应式布局** — 桌面三列等宽，窄屏横向滚动 + 吸附滚动
