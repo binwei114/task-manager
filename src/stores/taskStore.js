@@ -144,29 +144,72 @@ export const taskStore = {
 
   markPendingDelete(id) {
     if (pendingDeletes[id]) return
-    pendingDeletes[id] = setTimeout(() => this.confirmDelete(id), 3000)
-  },
-  cancelDelete(id) {
-    if (pendingDeletes[id]) { clearTimeout(pendingDeletes[id]); delete pendingDeletes[id] }
-  },
-  confirmDelete(id) {
-    this.cancelDelete(id)
+    // 立即从响应式状态移除 → 看板立刻消失，列计数即时更新
+    let removedTask = null
+    let removedFrom = null
+    let removedIdx = -1
     for (const st of Object.keys(STORE_KEYS)) {
       const idx = tasks[st].findIndex(t => t.id === id)
       if (idx !== -1) {
-        const [removed] = tasks[st].splice(idx, 1)
-        if (!_save(st)) {
-          // 写入失败 → 回滚
-          tasks[st].splice(idx, 0, removed)
-        }
-        return
+        [removedTask] = tasks[st].splice(idx, 1)
+        removedFrom = st
+        removedIdx = idx
+        break
       }
+    }
+    if (!removedTask) return
+
+    // 存入撤销缓存，3 秒后从 localStorage 删除
+    pendingDeletes[id] = {
+      task: removedTask,
+      fromStatus: removedFrom,
+      fromIndex: removedIdx,
+      timer: setTimeout(() => {
+        // 到期：清理 localStorage + 缓存
+        const st = pendingDeletes[id]?.fromStatus
+        if (st) {
+          const all = _load(st).filter(t => t.id !== id)
+          localStorage.setItem(STORE_KEYS[st], JSON.stringify(all))
+        }
+        delete pendingDeletes[id]
+      }, 3000),
+    }
+  },
+
+  cancelDelete(id) {
+    const record = pendingDeletes[id]
+    if (!record) return
+    clearTimeout(record.timer)
+    // 恢复到原位置
+    const list = tasks[record.fromStatus]
+    list.splice(record.fromIndex, 0, record.task)
+    // 重新编号保持顺序
+    list.forEach((t, i) => { t.order = i })
+    _save(record.fromStatus)
+    delete pendingDeletes[id]
+  },
+
+  confirmDelete(id) {
+    const record = pendingDeletes[id]
+    if (record) {
+      clearTimeout(record.timer)
+      // 从 localStorage 删除（响应式状态中已不存在）
+      const all = _load(record.fromStatus).filter(t => t.id !== id)
+      try {
+        localStorage.setItem(STORE_KEYS[record.fromStatus], JSON.stringify(all))
+      } catch (e) {
+        if (e.name === 'QuotaExceededError') {
+          window.dispatchEvent(new CustomEvent('storage:quota-exceeded', { detail: '存储空间不足，数据未保存' }))
+        }
+      }
+      delete pendingDeletes[id]
     }
   },
 
   reorderColumn(status, orderedIds) {
     const map = {}
-    const backup = [...tasks[status]]
+    // 深拷贝每个任务对象，回滚时 order 值不受后续修改影响
+    const backup = tasks[status].map(t => ({ ...t }))
     tasks[status].forEach(t => { map[t.id] = t })
     tasks[status] = orderedIds.map((id, i) => { map[id].order = i; return map[id] })
     if (!_save(status)) {
