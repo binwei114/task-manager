@@ -1,14 +1,13 @@
 <script setup>
-import { computed, ref, inject, watch } from 'vue'
-import { taskStore, isOverdue, formatDate } from '../stores/taskStore.js'
+import { computed, inject } from 'vue'
+import { taskStore, isOverdue } from '../stores/taskStore.js'
 import TaskCard from './TaskCard.vue'
 
 const props = defineProps({ status: String, label: String, icon: String, searchWord: { type: String, default: '' } })
 const emit = defineEmits(['card-click', 'delete-pending'])
 
 const drag = inject('drag', null)
-const isDragTarget = ref(false)
-const listEl = ref(null)
+const isDragTarget = computed(() => drag?.state.targetStatus === props.status)
 
 const tasks = computed(() => taskStore.getByStatus(props.status))
 
@@ -23,16 +22,6 @@ const sorted = computed(() =>
 )
 
 const overdueCount = computed(() => filtered.value.filter(t => isOverdue(t)).length)
-
-// 通过 watch drag state 更新高亮
-if (drag) {
-  watch(() => drag.state.targetStatus, (val) => {
-    isDragTarget.value = val === props.status
-  })
-  watch(() => drag.state.ended, () => {
-    isDragTarget.value = false
-  })
-}
 
 function cardClick(id) {
   emit('card-click', id)
@@ -51,7 +40,6 @@ function deletePending(id) {
     </div>
 
     <div
-      ref="listEl"
       class="task-list flex flex-col gap-3 min-h-[200px] flex-1 p-2 rounded-lg transition-colors"
       :class="{ 'bg-indigo-50 dark:bg-indigo-900/20 ring-2 ring-inset ring-indigo-400/40': isDragTarget }"
       :data-status="status"
