@@ -4,33 +4,45 @@
 
 | 层面 | 技术 | 理由 |
 |------|------|------|
-| 语言 | 原生 JavaScript (ES6+) | 无需构建工具、零依赖，开箱即用 |
-| 样式 | 原生 CSS + CSS 自定义属性 | 轻量实现深色模式主题切换 |
+| 语言 | JavaScript (ES6+) | 通用、生态成熟 |
+| 前端框架 | Vue 3 (Composition API, `<script setup>`) | 响应式数据绑定、组件化开发、轻量高效 |
+| 构建工具 | Vite | 极速 HMR、原生 ESM、开箱即用支持 Vue SFC |
+| 样式方案 | Tailwind CSS 3 | 原子化 CSS、深色模式内置支持、快速开发 |
 | 存储 | localStorage（按状态列拆分 key） | 纯前端、刷新不丢失；拆分 key 减少单次序列化量 |
 | 拖拽 | HTML5 Drag & Drop API + 触屏降级 | 桌面拖拽原生支持；触屏设备降级为「移动至」下拉菜单 |
-| 事件解耦 | 自定义事件总线 (EventBus) | Store 不再直接依赖视图层，新增模块只需订阅事件 |
-| 开发工具 | VSCode + Live Server | 本地快速预览 |
+| 包管理 | npm | 标准生态 |
+| 开发工具 | VSCode + Vite Dev Server | 热更新开发体验 |
 
-**关于拖拽的架构决策**：对桌面端用户使用 HTML5 Drag & Drop；对触屏设备（`'ontouchstart' in window`）自动降级为在卡片上显示「移动至…」下拉菜单，确保所有设备可操作。后续如需统一体验，可替换为 @hello-pangea/dnd（~5KB gzip）。
+**关于拖拽的架构决策**：对桌面端用户使用 HTML5 Drag & Drop；对触屏设备（`'ontouchstart' in window`）自动降级为在卡片上显示「移动至…」下拉菜单，确保所有设备可操作。
 
 ## 2. 目录结构
 
 ```
 task manager/
-├── index.html                  # 入口页面，承载所有 UI
-├── css/
-│   └── style.css               # 全局样式、主题变量、看板布局
-├── js/
-│   ├── app.js                  # 应用入口：初始化、路由切换
-│   ├── store.js                # 数据层：localStorage 读写 + CRUD 操作
-│   ├── board.js                # 看板视图：渲染三列、拖拽处理
-│   ├── modal.js                # 任务编辑弹窗：新增 / 编辑表单
-│   ├── theme.js                # 深色模式切换与系统偏好跟随
-│   ├── event-bus.js            # 轻量发布/订阅事件总线
-│   ├── confirm.js              # 自定义确认对话框（替代原生 confirm）
-│   └── search.js               # 搜索与筛选（按标题/描述模糊匹配）
+├── index.html                  # Vite 入口 HTML
+├── package.json                # 项目配置与依赖
+├── vite.config.js              # Vite 配置
+├── tailwind.config.js          # Tailwind 配置（含深色模式）
+├── postcss.config.js           # PostCSS（Tailwind 插件）
+├── src/
+│   ├── main.js                 # Vue 应用入口
+│   ├── App.vue                 # 根组件（布局 + 事件订阅）
+│   ├── stores/
+│   │   └── taskStore.js        # 响应式 Store：localStorage CRUD + 撤销删除
+│   ├── composables/
+│   │   ├── useTheme.js         # 深色模式切换与系统偏好跟随
+│   │   └── useToast.js         # Toast 通知管理
+│   ├── components/
+│   │   ├── AppHeader.vue       # 页头：标题、搜索、主题切换、新建按钮
+│   │   ├── KanbanBoard.vue     # 看板主体：三列渲染、拖拽代理
+│   │   ├── Column.vue          # 单列：列头 + 拖放区 + 卡片列表
+│   │   ├── TaskCard.vue        # 任务卡片：拖拽源、触屏菜单、逾期标记
+│   │   ├── TaskModal.vue       # 任务弹窗：新增 / 编辑 / 确认 三种模式
+│   │   └── ToastContainer.vue  # Toast 通知容器
+│   └── assets/
+│       └── style.css           # Tailwind 指令引入 + 少量自定义样式
 ├── doc/
-│   ├── architecture.md         # 本文件 — 架构设计草案
+│   ├── architecture.md         # 本文件
 │   └── requirement.md          # 需求文档
 └── .gitignore
 ```
